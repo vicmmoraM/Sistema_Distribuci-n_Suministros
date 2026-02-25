@@ -12,7 +12,12 @@ const ldap = require('ldapjs');
 
 async function authenticateUser(username, password, department) {
     return new Promise((resolve, reject) => {
-        const client = ldap.createClient({ url: process.env.LDAP_URL });
+        const ldapUrl = process.env.LDAP_URL || process.env.LDAP_HOST;
+        if (!ldapUrl) {
+            return reject(new Error('LDAP_URL no configurado.'));
+        }
+
+        const client = ldap.createClient({ url: ldapUrl });
 
         client.on('error', (err) => {
             reject(new Error('Error de conexión LDAP: ' + err.message));
@@ -25,8 +30,9 @@ async function authenticateUser(username, password, department) {
             }
 
             const searchBase = `ou=${department},${process.env.LDAP_BASE_OU}`;
+            const safeUsername = ldap.escapeFilter ? ldap.escapeFilter(username) : username;
             const searchOptions = {
-                filter: `(sAMAccountName=${ldap.escapeDN(username)})`,
+                filter: `(sAMAccountName=${safeUsername})`,
                 scope: 'sub',
                 attributes: ['dn', 'displayName', 'cn'],
             };
@@ -54,9 +60,10 @@ async function authenticateUser(username, password, department) {
                         return reject(new Error('Usuario no encontrado en el directorio'));
                     }
 
-                    const userDN = userEntry.objectName;
-                    const cnPart = userDN.split(',')[0];
-                    const displayName = cnPart.split('=')[1] || username;
+                    const userDN = userEntry.dn ? userEntry.dn.toString() : String(userEntry.objectName || '');
+                    const entryDisplayName = userEntry.object && userEntry.object.displayName;
+                    const cnPart = userDN.split(',')[0] || '';
+                    const displayName = entryDisplayName || cnPart.split('=')[1] || username;
 
                     client.bind(userDN, password, (err) => {
                         client.destroy();

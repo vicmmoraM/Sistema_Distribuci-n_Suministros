@@ -1,20 +1,24 @@
-require('dotenv').config()
+require('dotenv').config();
 
-const express = require('express');
-const session = require('express-session');
-const cors = require('cors');
-const{ testConnection } = require('./config/db');
+const express        = require('express');
+const session        = require('express-session');
+const cors           = require('cors');
+const { testConnection } = require('./config/db');
 
-const authRoutes = require('./routes/auth');
+// ── Rutas ─────────────────────────────────────────────────────────────────────
+const authRoutes      = require('./routes/auth');
 const catalogosRoutes = require('./routes/catalogos');
-const pedidosRoutes = require('./routes/pedidos');
+const pedidosRoutes   = require('./routes/pedidos');
 
-const app = express();
+const app  = express();
+const PORT = process.env.PORT || 3001;
 
-// Configuración de CORS para permitir solicitudes desde el frontend
+// ── Middlewares globales ──────────────────────────────────────────────────────
+
+// CORS — solo permite peticiones desde el frontend React
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-    credentials: true,
+  origin:      process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true, // necesario para enviar cookies de sesión
 }));
 
 // Parsear JSON
@@ -33,25 +37,29 @@ app.use(session({
   },
 }));
 
+// ── Montaje de rutas ──────────────────────────────────────────────────────────
 app.use('/api/auth',      authRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/pedidos',   pedidosRoutes);
 
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ── 404 catch-all ────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: `Ruta no encontrada: ${req.method} ${req.path}` });
 });
 
+// ── Error handler global ──────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('Error no manejado:', err);
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
+// ── Arrancar ──────────────────────────────────────────────────────────────────
 async function start() {
-    const PORT = process.env.PORT || 3001;
   await testConnection(); // Verificar BD antes de levantar el server
   app.listen(PORT, () => {
     console.log(`🚀 API corriendo en http://localhost:${PORT}`);
