@@ -109,7 +109,7 @@
   align-items: center;
 }
 
-.input-icon {
+.login-card .input-icon {
   position: absolute;
   left: 0.75rem;
   top: 50%;
@@ -119,17 +119,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.input-icon svg {
-  width: 1.25rem;
-  height: 1.25rem;
+.login-card .input-icon svg {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  max-width: 1.25rem;
+  max-height: 1.25rem;
+  display: block;
 }
 
 .form-input,
 .form-select {
   width: 100%;
-  padding: 0.625rem 0.875rem 0.625rem 2.5rem;
+  padding: 0.625rem 0.875rem 0.625rem 3rem;
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
@@ -178,11 +185,16 @@
   animation: fadeIn 0.3s ease;
 }
 
-.error-alert svg {
-  width: 1.25rem;
-  height: 1.25rem;
+.login-card .error-alert svg {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  max-width: 1.25rem;
+  max-height: 1.25rem;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
   flex-shrink: 0;
   margin-top: 0.125rem;
+  display: block;
 }
 
 /* Botón */
@@ -220,9 +232,15 @@
   box-shadow: none;
 }
 
-.login-button svg {
-  width: 1.25rem;
-  height: 1.25rem;
+.login-card .login-button svg {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  max-width: 1.25rem;
+  max-height: 1.25rem;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Footer */
