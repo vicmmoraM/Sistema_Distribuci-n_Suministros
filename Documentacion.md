@@ -78,7 +78,7 @@ Sistema_Distribucion_Suministros/
 ## 3.1 Diagrama
 Para ver el diagrama detallado, haz clic en el enlace: 
 
-[![Diagrama de DB](./docs/base.png)](./docs/base.png)
+[![Diagrama de DB](./Docs/base.png)](./Docs/base.png)
 
 ## 4. Diccionario de Datos
 
