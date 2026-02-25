@@ -119,7 +119,7 @@ export default function Home() {
         </div>
         <div className="header-user-section">
           <div className="header-user-info">
-            <p className="user-name">{user?.nombre}</p>
+            <p className="user-name"> Bienvenido, {user?.nombre}</p>
             <p className="user-date">{fecha}</p>
           </div>
           <button onClick={handleLogout} className="logout-button">

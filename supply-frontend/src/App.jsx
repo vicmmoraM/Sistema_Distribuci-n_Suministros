@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import Notificacion from './pages/Notificacion'
+import Reportes from './pages/Reportes'
 
 export default function App() {
   return (
@@ -16,6 +17,9 @@ export default function App() {
           } />
           <Route path="/notificacion" element={
             <ProtectedRoute><Notificacion /></ProtectedRoute>
+          } />
+          <Route path="/reportes" element={
+            <ProtectedRoute><Reportes /></ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

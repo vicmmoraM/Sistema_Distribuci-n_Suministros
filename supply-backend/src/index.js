@@ -9,6 +9,7 @@ const { testConnection } = require('./config/db');
 const authRoutes      = require('./routes/auth');
 const catalogosRoutes = require('./routes/catalogos');
 const pedidosRoutes   = require('./routes/pedidos');
+const reportesRoutes  = require('./routes/reportes');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -41,6 +42,7 @@ app.use(session({
 app.use('/api/auth',      authRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/pedidos',   pedidosRoutes);
+app.use('/api/reportes',  reportesRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
