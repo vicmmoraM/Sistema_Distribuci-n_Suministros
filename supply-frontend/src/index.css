@@ -61,3 +61,17 @@ h1, h2, h3, h4 {
 .delay-3 { animation-delay: 0.15s; }
 .delay-4 { animation-delay: 0.20s; }
 .delay-5 { animation-delay: 0.25s; }
+
+/* ── Responsive Layout ── */
+@media (max-width: 768px) {
+  main[style*="marginLeft"],
+  .rep-wrapper[style*="marginLeft"],
+  .notif-body[style*="marginLeft"],
+  div[style*="marginLeft: 250"] {
+    margin-left: 0 !important;
+  }
+
+  body {
+    font-size: 14px;
+  }
+}

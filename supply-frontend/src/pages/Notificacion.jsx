@@ -1,6 +1,8 @@
 // src/pages/Notificacion.jsx
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import Navbar from '../components/Navbar'
+import Sidebar from '../components/Sidebar'
 import './Notificacion.css'
 
 export default function Notificacion() {
@@ -17,27 +19,10 @@ export default function Notificacion() {
   return (
     <div className="notif-page">
 
-      {/* ── Header — idéntico al de Home ─────── */}
-      <header className="notif-header">
-        <div className="notif-header__brand">
-          <div className="notif-header__logo">
-            <img
-              src="images/LOGO FC SINTETIZADO FONDO BLANCO.jpg"
-              alt="FarmCorp Logo"
-            />
-          </div>
-          <div className="notif-header__brand-text">
-            <h1>Solicitud de Suministros</h1>
-            <p>Sistema de Distribución de Suministros</p>
-          </div>
-        </div>
-        <button className="notif-header__logout" onClick={handleLogout}>
-          Cerrar Sesión
-        </button>
-      </header>
+      <Navbar />
+      <Sidebar />
 
-      {/* ── Contenido central ───────────────── */}
-      <main className="notif-body">
+      <main className="notif-body" style={{ marginLeft: 250 }}>
         <div className="notif-card anim-fade-up">
 
           {/* Ícono check */}
@@ -51,7 +36,6 @@ export default function Notificacion() {
           <h2 className="notif-title">¡Pedido registrado!</h2>
           <p className="notif-message">{mensaje}</p>
 
-          {/* Aviso si el email falló */}
           {!emailEnviado && (
             <div className="notif-warning">
               <p className="notif-warning__text">

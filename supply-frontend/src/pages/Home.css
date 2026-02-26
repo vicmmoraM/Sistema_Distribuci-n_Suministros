@@ -97,6 +97,7 @@
   max-width: 90rem;
   margin: 0 auto;
   padding: 1rem;
+  margin-top: 0;
 }
 
 /* Sections - Sin tarjetas separadas */
@@ -512,3 +513,54 @@
   }
 }
 
+/* ── Responsive Mobile ── */
+@media (max-width: 768px) {
+  .home-main {
+    padding: 0.75rem;
+    margin-left: 0 !important;
+  }
+
+  .home-main .section-card {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .home-main .section-header {
+    font-size: 0.8rem;
+  }
+
+  .home-main .add-item-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .home-main .form-select,
+  .home-main .form-input {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .home-main .add-button {
+    width: 100%;
+    padding: 0.6rem 1rem;
+  }
+
+  .home-main .cart-table {
+    font-size: 0.75rem;
+  }
+
+  .home-main .cart-table th,
+  .home-main .cart-table td {
+    padding: 0.5rem 0.25rem;
+  }
+
+  .home-main .delete-btn {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .home-main .submit-button {
+    width: 100%;
+    padding: 0.75rem;
+  }
+}

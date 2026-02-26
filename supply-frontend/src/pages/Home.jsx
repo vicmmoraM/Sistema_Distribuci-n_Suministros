@@ -1,12 +1,13 @@
-// src/pages/Home.jsx
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import Navbar from '../components/Navbar'
+import Sidebar from '../components/Sidebar'
 import './Home.css'
 
 export default function Home() {
-  const { user, logout, loading } = useAuth()
+  const { user, loading } = useAuth()
   const navigate = useNavigate()
 
   // Catálogos
@@ -27,47 +28,42 @@ export default function Home() {
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
 
-  const fecha = new Date().toLocaleDateString('es-EC', { year: 'numeric', month: 'long', day: 'numeric' })
-
   // Cargar PDVs y tipos al montar
   useEffect(() => {
-    if (loading) return  // esperar que AuthContext confirme la sesión
-    api.get('/catalogos/pdvs').then(r => setPdvs(r.data)).catch(() => { })
-    api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => { })
-  }, [loading])  // ← se dispara cuando loading cambia a false
-
+    if (loading) return
+    api.get('/catalogos/pdvs').then(r => setPdvs(r.data)).catch(() => {})
+    api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => {})
+  }, [loading])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
     if (!tipoSeleccionado) { setSuministros([]); setSuministroId(''); return }
     api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}`)
       .then(r => { setSuministros(r.data); setSuministroId('') })
-      .catch(() => { })
-  }, [tipoSeleccionado]);
-
-  const pdvInfo = pdvs.find(p => p.codigo === Number(pdvSeleccionado?.codigo))
+      .catch(() => {})
+  }, [tipoSeleccionado])
 
   // Totales
-  const subtotalOficina = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
+  const subtotalOficina  = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
   const subtotalLimpieza = carrito.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
-  const totalPedido = carrito.reduce((s, i) => s + i.total, 0)
-  const cupoExcedido = pdvSeleccionado && totalPedido > pdvSeleccionado.cupo
+  const totalPedido      = carrito.reduce((s, i) => s + i.total, 0)
+  const cupoExcedido     = pdvSeleccionado && totalPedido > pdvSeleccionado.cupo
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
-    const sum = suministros.find(s => s.codigo === Number(suministroId))
+    const sum  = suministros.find(s => s.codigo === Number(suministroId))
     const tipo = tiposSuministro.find(t => t.codigo === Number(tipoSeleccionado))
     if (!sum) return
 
     setCarrito(prev => [...prev, {
       id: Date.now(),
-      suministroId: sum.codigo,
+      suministroId:     sum.codigo,
       suministroNombre: sum.descripcion,
-      tipoId: tipo.codigo,
-      tipoNombre: tipo.descripcion,
-      cantidad: Number(cantidad),
-      precioUnitario: Number(sum.precio),
-      total: Number(cantidad) * Number(sum.precio),
+      tipoId:           tipo.codigo,
+      tipoNombre:       tipo.descripcion,
+      cantidad:         Number(cantidad),
+      precioUnitario:   Number(sum.precio),
+      total:            Number(cantidad) * Number(sum.precio),
     }])
     setSuministroId('')
     setCantidad(1)
@@ -90,44 +86,12 @@ export default function Home() {
     }
   }
 
-  const handleLogout = async () => { await logout(); navigate('/login') }
-
-  // SVG Icons
-  const BuildingIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" style={{ width: '20px', height: '20px' }}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-    </svg>
-  )
-
   return (
     <div className="home-container">
+      <Navbar />
+      <Sidebar />
 
-      {/* Header */}
-      <header className="home-header">
-        <div className="header-brand">
-          <div className="header-logo">
-            <img
-              src="images/LOGO FC SINTETIZADO FONDO BLANCO.jpg"
-              alt="FarmCorp Logo"
-              style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
-            />
-          </div>
-          <div className="header-brand-text">
-            <h1>Solicitud de Suministros</h1>
-            <p>Sistema de Distribución de Suministros</p>
-          </div>
-        </div>
-        <div className="header-user-section">
-          <div className="header-user-info">
-            <p className="user-name"> Bienvenido, {user?.nombre}</p>
-            <p className="user-date">{fecha}</p>
-          </div>
-          <button onClick={handleLogout} className="logout-button">
-            Cerrar Sesión
-          </button>
-        </div>
-      </header>
-      <main className="home-main">
+      <main className="home-main" style={{ marginLeft: 250 }}>
 
         {/* PDV Selection */}
         <section className="section-card">
@@ -141,7 +105,9 @@ export default function Home() {
               }}
               className="pdv-select">
               <option value="">Seleccionar PDV...</option>
-              {pdvs.map(p => <option key={p.codigo} value={p.codigo}>{p.descripcion} — {p.ciudad}</option>)}
+              {pdvs.map(p => (
+                <option key={p.codigo} value={p.codigo}>{p.descripcion} — {p.ciudad}</option>
+              ))}
             </select>
 
             {pdvSeleccionado && (
@@ -149,12 +115,8 @@ export default function Home() {
                 <span className="pdv-tag cupo">
                   Cupo: ${Number(pdvSeleccionado.cupo).toFixed(2)}
                 </span>
-                <span className="pdv-tag info">
-                  {pdvSeleccionado.ciudad}
-                </span>
-                <span className="pdv-tag info">
-                  {pdvSeleccionado.direccion}
-                </span>
+                <span className="pdv-tag info">{pdvSeleccionado.ciudad}</span>
+                <span className="pdv-tag info">{pdvSeleccionado.direccion}</span>
               </div>
             )}
           </div>
@@ -167,7 +129,9 @@ export default function Home() {
             <select value={tipoSeleccionado} onChange={e => setTipo(e.target.value)}
               className="form-select">
               <option value="">Tipo de suministro...</option>
-              {tiposSuministro.map(t => <option key={t.codigo} value={t.codigo}>{t.descripcion}</option>)}
+              {tiposSuministro.map(t => (
+                <option key={t.codigo} value={t.codigo}>{t.descripcion}</option>
+              ))}
             </select>
 
             <select value={suministroId} onChange={e => setSuministroId(e.target.value)}
@@ -175,17 +139,21 @@ export default function Home() {
               className="form-select">
               <option value="">Suministro...</option>
               {suministros.map(s => (
-                <option key={s.codigo} value={s.codigo}>{s.descripcion} — ${Number(s.precio).toFixed(2)}</option>
+                <option key={s.codigo} value={s.codigo}>
+                  {s.descripcion} — ${Number(s.precio).toFixed(2)}
+                </option>
               ))}
             </select>
 
-            <input type="number" min={1} max={10} value={cantidad}
+            <input
+              type="number" min={1} max={10} value={cantidad}
               onChange={e => setCantidad(e.target.value)}
               placeholder="Cantidad"
               className="form-input"
             />
 
-            <button onClick={handleAgregar}
+            <button
+              onClick={handleAgregar}
               disabled={!suministroId || !tipoSeleccionado}
               className="add-button">
               + Agregar
@@ -218,7 +186,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {carrito.map((item) => (
+                    {carrito.map(item => (
                       <tr key={item.id}>
                         <td className="item-name">{item.suministroNombre}</td>
                         <td>
@@ -230,8 +198,7 @@ export default function Home() {
                         <td>${item.precioUnitario.toFixed(2)}</td>
                         <td className="item-name">${item.total.toFixed(2)}</td>
                         <td>
-                          <button onClick={() => handleEliminar(item.id)}
-                            className="remove-button">
+                          <button onClick={() => handleEliminar(item.id)} className="remove-button">
                             ×
                           </button>
                         </td>
@@ -251,12 +218,10 @@ export default function Home() {
                   <span className="label">Total Limpieza</span>
                   <span className="value">${subtotalLimpieza.toFixed(2)}</span>
                 </div>
-                <div className={`total-row grand-total`}>
+                <div className="total-row grand-total">
                   <span className="label">
                     Total
-                    {cupoExcedido && (
-                      <span className="exceeded-badge">EXCEDIDO</span>
-                    )}
+                    {cupoExcedido && <span className="exceeded-badge">EXCEDIDO</span>}
                   </span>
                   <span className={`value ${cupoExcedido ? 'exceeded' : ''}`}>
                     ${totalPedido.toFixed(2)}
@@ -268,11 +233,7 @@ export default function Home() {
         </section>
 
         {/* Error */}
-        {error && (
-          <div className="error-alert">
-            {error}
-          </div>
-        )}
+        {error && <div className="error-alert">{error}</div>}
 
         {/* Submit */}
         <div className="submit-section">
@@ -283,6 +244,7 @@ export default function Home() {
             {enviando ? 'Enviando pedido...' : 'Realizar Pedido'}
           </button>
         </div>
+
       </main>
     </div>
   )
