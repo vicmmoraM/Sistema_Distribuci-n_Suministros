@@ -2,14 +2,12 @@
    Reportes.css  —  Página de reportes de pedidos
    ═══════════════════════════════════════════════ */
 
-/* ── Variables ───────────────────────────────── */
 :root {
   --rep-blue-dark:  #1b3a6b;
   --rep-blue:       #2e5fa3;
   --rep-blue-light: #e8edf5;
   --rep-blue-pale:  #f0f4fa;
   --rep-green:      #1a7f4e;
-  --rep-green-bg:   #e6f4ee;
   --rep-yellow:     #92610a;
   --rep-yellow-bg:  #fef3d0;
   --rep-red:        #b91c1c;
@@ -18,14 +16,13 @@
   --rep-gray-light: #f9fafb;
   --rep-border:     #e2e8f0;
   --rep-shadow:     0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
-  --rep-shadow-md:  0 4px 12px rgba(0,0,0,.10);
   --rep-radius:     10px;
   --rep-radius-sm:  6px;
 }
 
-/* ── Layout wrapper ──────────────────────────── */
+/* ── Layout ──────────────────────────────────── */
 .rep-wrapper {
-  max-width: 1200px;
+  max-width: 1300px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
   font-family: 'Segoe UI', system-ui, sans-serif;
@@ -108,8 +105,7 @@
 /* ── Spinner ─────────────────────────────────── */
 .rep-spinner {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 14px; height: 14px;
   border: 2px solid rgba(255,255,255,.4);
   border-top-color: #fff;
   border-radius: 50%;
@@ -127,7 +123,6 @@
   box-shadow: var(--rep-shadow);
 }
 
-/* Modo toggle */
 .rep-filtros__modo {
   display: flex;
   gap: .5rem;
@@ -156,7 +151,6 @@
   color: var(--rep-blue);
 }
 
-/* Campos */
 .rep-filtros__campos {
   display: flex;
   gap: 1rem;
@@ -228,14 +222,9 @@
   color: var(--rep-gray-text);
   font-size: .9rem;
 }
-
-.rep-loading__dots {
-  display: flex;
-  gap: .4rem;
-}
+.rep-loading__dots { display: flex; gap: .4rem; }
 .rep-loading__dots span {
-  width: 8px;
-  height: 8px;
+  width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--rep-blue);
   animation: rep-bounce 1.2s infinite ease-in-out;
@@ -244,7 +233,7 @@
 .rep-loading__dots span:nth-child(3) { animation-delay: .4s; }
 @keyframes rep-bounce {
   0%, 80%, 100% { transform: scale(.6); opacity: .5; }
-  40%           { transform: scale(1); opacity: 1; }
+  40%           { transform: scale(1);  opacity: 1;  }
 }
 
 /* ── Empty ───────────────────────────────────── */
@@ -279,47 +268,63 @@
   background: var(--rep-blue-dark);
 }
 .rep-table thead th {
-  padding: .85rem 1rem;
+  padding: .85rem .9rem;
   text-align: left;
-  font-size: .75rem;
+  font-size: .72rem;
   font-weight: 700;
   color: rgba(255,255,255,.9);
   letter-spacing: .06em;
   text-transform: uppercase;
   white-space: nowrap;
 }
-.rep-th--right { text-align: right; }
+.rep-th--right  { text-align: right;  }
+.rep-th--center { text-align: center; }
 
+/* Filas agrupadas por pedido */
 .rep-row {
   border-bottom: 1px solid var(--rep-border);
-  transition: background .1s;
+  transition: filter .1s;
 }
-.rep-row:last-child { border-bottom: none; }
-.rep-row:hover { background: var(--rep-blue-pale); }
+.rep-row--par   td { background: var(--rep-blue-pale); }
+.rep-row--impar td { background: #fff; }
+
+/* Línea separadora entre pedidos */
+.rep-row--first td {
+  border-top: 2px solid var(--rep-blue-light);
+}
+
+.rep-row:hover td { filter: brightness(.97); }
 
 .rep-row td {
-  padding: .75rem 1rem;
+  padding: .6rem .9rem;
   vertical-align: middle;
 }
 
+/* Celdas con rowSpan (datos del pedido) */
 .rep-td--id {
   color: #94a3b8;
   font-size: .8rem;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
-  width: 56px;
+  width: 60px;
+  vertical-align: top;
+  padding-top: .75rem;
 }
 
 .rep-td--fecha {
   white-space: nowrap;
   color: var(--rep-gray-text);
-  font-size: .83rem;
+  font-size: .82rem;
+  vertical-align: top;
+  padding-top: .75rem;
 }
 
 .rep-td--usuario {
   display: flex;
   flex-direction: column;
   gap: .1rem;
+  vertical-align: top;
+  padding-top: .75rem;
 }
 .rep-usuario__nombre {
   font-weight: 600;
@@ -332,44 +337,63 @@
 
 .rep-td--pdv {
   font-weight: 500;
-  max-width: 220px;
+  max-width: 200px;
+  vertical-align: top;
+  padding-top: .75rem;
 }
 
-.rep-td--total {
-  text-align: right;
+/* Columnas de ítems */
+.rep-td--tipo {
+  font-size: .8rem;
+  color: var(--rep-blue);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rep-td--suministro {
+  max-width: 240px;
+  font-size: .875rem;
+}
+
+.rep-td--center { text-align: center; font-variant-numeric: tabular-nums; }
+.rep-td--right  { text-align: right;  font-variant-numeric: tabular-nums; }
+
+.rep-td--precio {
+  color: var(--rep-gray-text);
+  font-size: .85rem;
+}
+
+.rep-td--subtotal {
   font-weight: 700;
-  font-size: .95rem;
-  font-variant-numeric: tabular-nums;
   color: var(--rep-blue-dark);
   white-space: nowrap;
 }
 
-/* ── Badges de estado ────────────────────────── */
+/* ── Badges ──────────────────────────────────── */
 .rep-badge {
   display: inline-block;
   padding: .2rem .65rem;
   border-radius: 20px;
-  font-size: .75rem;
+  font-size: .72rem;
   font-weight: 600;
   letter-spacing: .02em;
   white-space: nowrap;
 }
-.badge--pendiente  { background: var(--rep-yellow-bg); color: var(--rep-yellow); }
-.badge--aprobado   { background: var(--rep-green-bg);  color: var(--rep-green);  }
-.badge--entregado  { background: #e0f2fe; color: #075985; }
-.badge--rechazado  { background: var(--rep-red-bg);    color: var(--rep-red);    }
-.badge--default    { background: #f1f5f9; color: #475569; }
+.badge--pendiente { background: var(--rep-yellow-bg); color: var(--rep-yellow); }
+.badge--aprobado  { background: #e6f4ee;              color: var(--rep-green);  }
+.badge--entregado { background: #e0f2fe;              color: #075985;           }
+.badge--rechazado { background: var(--rep-red-bg);    color: var(--rep-red);    }
+.badge--default   { background: #f1f5f9;              color: #475569;           }
 
 /* ── Tfoot ───────────────────────────────────── */
 .rep-tfoot-row {
   background: var(--rep-blue-pale);
   border-top: 2px solid var(--rep-blue-light);
 }
-.rep-tfoot-row td {
-  padding: .8rem 1rem;
-}
+.rep-tfoot-row td { padding: .8rem .9rem; }
+
 .rep-tfoot__label {
-  font-size: .8rem;
+  font-size: .78rem;
   font-weight: 700;
   color: var(--rep-blue-dark);
   text-transform: uppercase;
@@ -400,7 +424,7 @@
 }
 
 /* ── Responsive ──────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .rep-wrapper { padding: 1rem; }
   .rep-title    { font-size: 1.3rem; }
   .rep-filtros__campos { flex-direction: column; }
