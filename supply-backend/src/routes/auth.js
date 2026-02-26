@@ -2,8 +2,8 @@
 // AUTH_MODE=local  → valida contra tabla usuarios (para pruebas sin AD)
 // AUTH_MODE=ldap   → valida contra Active Directory (producción)
 
-const express  = require('express')
-const router   = express.Router()
+const express = require('express')
+const router = express.Router()
 const { pool } = require('../config/db')
 
 /**
@@ -89,9 +89,9 @@ router.post('/login', async (req, res) => {
       await conn.commit()
       conn.release()
 
-      req.session.loggedin     = true
-      req.session.userlogin    = user.login
-      req.session.username     = user.nombres
+      req.session.loggedin = true
+      req.session.userlogin = user.login
+      req.session.username = user.nombres
       req.session.departamento = departmentId
 
       return res.json({
@@ -114,8 +114,8 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ error: 'Departamento no válido.' })
       }
 
-      // Autenticar contra AD
-      const user = await authenticateUser(username, password, deptRows[0].descripcion)
+      // ✅ Ya no se pasa department — ldap.js busca en todo el BASE_DN
+      const user = await authenticateUser(username, password)
 
       // Upsert — sincronizar con datos frescos del AD
       await syncUser(conn, user.username, user.displayName, departmentId)
@@ -123,9 +123,9 @@ router.post('/login', async (req, res) => {
       await conn.commit()
       conn.release()
 
-      req.session.loggedin     = true
-      req.session.userlogin    = user.username
-      req.session.username     = user.displayName
+      req.session.loggedin = true
+      req.session.userlogin = user.username
+      req.session.username = user.displayName
       req.session.departamento = departmentId
 
       return res.json({
@@ -166,9 +166,9 @@ router.get('/me', (req, res) => {
   try {
     if (req.session && req.session.loggedin && req.session.userlogin) {
       return res.json({
-        loggedin:     true,
-        login:        req.session.userlogin,
-        nombre:       req.session.username,
+        loggedin: true,
+        login: req.session.userlogin,
+        nombre: req.session.username,
         departamento: req.session.departamento,
       })
     }
