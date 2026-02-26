@@ -18,7 +18,7 @@ const PORT = process.env.PORT || 3001;
 
 // CORS — solo permite peticiones desde el frontend React
 app.use(cors({
-  origin:      process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin:      process.env.CORS_ORIGIN || 'http://10.101.13.149:5173',
   credentials: true, // necesario para enviar cookies de sesión
 }));
 
@@ -62,11 +62,15 @@ app.use((err, req, res, next) => {
 
 // ── Arrancar ──────────────────────────────────────────────────────────────────
 async function start() {
-  await testConnection(); // Verificar BD antes de levantar el server
-  app.listen(PORT, () => {
-    console.log(`🚀 API corriendo en http://localhost:${PORT}`);
-    console.log(`   Entorno: ${process.env.NODE_ENV}`);
-    console.log(`   CORS:    ${process.env.CORS_ORIGIN}`);
+  await testConnection(); 
+
+  // Agregamos '0.0.0.0' como segundo argumento
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 API disponible en la red!`);
+    console.log(`🏠 Local:   http://localhost:${PORT}`);
+    // Tip: Aquí podrías poner tu IP real para no perderte
+    console.log(`🌐 Red:     http://10.101.13.149:${PORT}`); 
+    console.log(`🛠️  CORS:    ${process.env.CORS_ORIGIN}`);
   });
 }
 
