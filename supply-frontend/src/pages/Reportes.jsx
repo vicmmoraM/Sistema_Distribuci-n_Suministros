@@ -171,7 +171,7 @@ export default function Reportes() {
         >
           {descargando
             ? <><span className="rep-spinner" /> Generando...</>
-            : <><span className="rep-icon"></span> Exportar Excel</>}
+            : <><span className="rep-icon">⬇</span> Exportar Excel</>}
         </button>
       </div>
 
@@ -294,8 +294,10 @@ export default function Reportes() {
                             : '—'}
                         </td>
                         <td className="rep-td--usuario" rowSpan={pedido.items.length}>
-                          <span className="rep-usuario__nombre">{pedido.usuarioNombre}</span>
-                          <span className="rep-usuario__login">{pedido.usuarioLogin}</span>
+                          <div className="rep-usuario__wrap">
+                            <span className="rep-usuario__nombre">{pedido.usuarioNombre}</span>
+                            <span className="rep-usuario__login">{pedido.usuarioLogin}</span>
+                          </div>
                         </td>
                         <td className="rep-td--pdv" rowSpan={pedido.items.length}>
                           {pedido.pdvNombre}

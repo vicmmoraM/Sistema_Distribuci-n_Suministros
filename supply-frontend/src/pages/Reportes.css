@@ -307,24 +307,24 @@
   font-weight: 700;
   text-align: center;
   width: 60px;
-  vertical-align: top;
-  padding-top: .75rem;
+  vertical-align: middle;
 }
 
 .rep-td--fecha {
   white-space: nowrap;
   color: var(--rep-gray-text);
   font-size: .82rem;
-  vertical-align: top;
-  padding-top: .75rem;
+  vertical-align: middle;
 }
 
 .rep-td--usuario {
+  vertical-align: middle;
+}
+
+.rep-td--usuario .rep-usuario__wrap {
   display: flex;
   flex-direction: column;
   gap: .1rem;
-  vertical-align: top;
-  padding-top: .75rem;
 }
 .rep-usuario__nombre {
   font-weight: 600;
@@ -338,8 +338,7 @@
 .rep-td--pdv {
   font-weight: 500;
   max-width: 200px;
-  vertical-align: top;
-  padding-top: .75rem;
+  vertical-align: middle;
 }
 
 /* Columnas de ítems */
