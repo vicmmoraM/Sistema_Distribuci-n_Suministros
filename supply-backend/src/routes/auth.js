@@ -20,14 +20,14 @@ const { pool } = require('../config/db')
 async function syncUser(conn, login, nombres, departamento) {
   // Verificar si ya existe
   const [rows] = await conn.query(
-    'SELECT codigo FROM usuarios WHERE login = ?',
+    'SELECT id_usuario FROM usuarios WHERE login = ?',
     [login]
   )
 
   if (rows.length === 0) {
     // INSERT — usuario nuevo
     const [result] = await conn.query(
-      `INSERT INTO usuarios (departamento, rol, login, nombres, email)
+      `INSERT INTO usuarios (id_departamento, id_rol, login, nombres, email)
        VALUES (?, 1, ?, ?, ?)`,
       [departamento, login, nombres, `${login}@farmcorp.com.ec`]
     )
@@ -36,11 +36,11 @@ async function syncUser(conn, login, nombres, departamento) {
     // UPDATE — sincronizar nombre y departamento con el AD
     await conn.query(
       `UPDATE usuarios
-       SET nombres = ?, departamento = ?
+       SET nombres = ?, id_departamento = ?
        WHERE login = ?`,
       [nombres, departamento, login]
     )
-    return rows[0].codigo
+    return rows[0].id_usuario
   }
 }
 
@@ -63,9 +63,9 @@ router.post('/login', async (req, res) => {
     if (process.env.AUTH_MODE === 'local') {
       // ── MODO TEST: validar contra tabla usuarios ────────────────────
       const [rows] = await conn.query(
-        `SELECT codigo, nombres, login, password
+        `SELECT id_usuario, nombres, login, password
          FROM usuarios
-         WHERE login = ? AND departamento = ?`,
+         WHERE login = ? AND id_departamento = ?`,
         [username, departmentId]
       )
 
@@ -86,6 +86,13 @@ router.post('/login', async (req, res) => {
       // Upsert — sincronizar datos
       await syncUser(conn, user.login, user.nombres, departmentId)
 
+      // Obtener el nombre del departamento
+      const [deptInfoRows] = await conn.query(
+        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
+        [departmentId]
+      )
+      const departmentName = deptInfoRows.length > 0 ? deptInfoRows[0].descripcion : null
+
       await conn.commit()
       conn.release()
 
@@ -96,7 +103,12 @@ router.post('/login', async (req, res) => {
 
       return res.json({
         message: 'Login exitoso (modo local)',
-        user: { login: user.login, nombre: user.nombres, departamento: departmentId },
+        user: { 
+          login: user.login, 
+          nombre: user.nombres, 
+          departamento: departmentId,
+          departmentName: departmentName,
+        },
       })
 
     } else {
@@ -104,7 +116,7 @@ router.post('/login', async (req, res) => {
       const { authenticateUser } = require('../config/ldap')
 
       const [deptRows] = await conn.query(
-        'SELECT descripcion FROM departamentos WHERE codigo = ?',
+        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
         [departmentId]
       )
 
@@ -120,6 +132,8 @@ router.post('/login', async (req, res) => {
       // Upsert — sincronizar con datos frescos del AD
       await syncUser(conn, user.username, user.displayName, departmentId)
 
+      const departmentName = deptRows[0].descripcion
+
       await conn.commit()
       conn.release()
 
@@ -130,7 +144,12 @@ router.post('/login', async (req, res) => {
 
       return res.json({
         message: 'Login exitoso',
-        user: { login: user.username, nombre: user.displayName, departamento: departmentId },
+        user: { 
+          login: user.username, 
+          nombre: user.displayName, 
+          departamento: departmentId,
+          departmentName: departmentName,
+        },
       })
     }
 
@@ -161,15 +180,26 @@ router.post('/logout', (req, res) => {
 /**
  * GET /api/auth/me
  * Verifica si hay sesión activa (útil al recargar el frontend).
+ * Devuelve también el nombre del departamento.
  */
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   try {
     if (req.session && req.session.loggedin && req.session.userlogin) {
+      const conn = await pool.getConnection()
+      const [deptRows] = await conn.query(
+        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
+        [req.session.departamento]
+      )
+      conn.release()
+
+      const departmentName = deptRows.length > 0 ? deptRows[0].descripcion : null
+
       return res.json({
         loggedin: true,
         login: req.session.userlogin,
         nombre: req.session.username,
         departamento: req.session.departamento,
+        departmentName: departmentName,
       })
     }
     return res.status(401).json({ loggedin: false })

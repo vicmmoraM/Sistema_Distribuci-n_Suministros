@@ -158,7 +158,7 @@ export default function Login() {
                   className="form-select">
                   <option value="">Seleccionar departamento...</option>
                   {departamentos.map(d => (
-                    <option key={d.codigo} value={d.codigo}>{d.descripcion}</option>
+                    <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
                   ))}
                 </select>
               </div>

@@ -228,7 +228,7 @@ export default function Reportes() {
               <select name="pdv" value={filtros.pdv} onChange={handleFiltroChange}>
                 <option value="">Todos los PDV</option>
                 {pdvs.map(p => (
-                  <option key={p.codigo} value={p.codigo}>{p.descripcion}</option>
+                  <option key={p.id_pdv} value={p.id_pdv}>{p.descripcion}</option>
                 ))}
               </select>
             </div>
@@ -289,7 +289,7 @@ export default function Reportes() {
                           </td>
                           <td className="rep-td--fecha" rowSpan={pedido.items.length}>
                             {pedido.fecha
-                              ? new Date(pedido.fecha + 'T00:00:00').toLocaleDateString('es-EC', {
+                              ? new Date(pedido.fecha).toLocaleDateString('es-EC', {
                                   day: '2-digit', month: 'short', year: 'numeric'
                                 })
                               : '—'}

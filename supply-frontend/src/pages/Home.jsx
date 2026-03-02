@@ -28,6 +28,10 @@ export default function Home() {
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
 
+  const tiposSuministroUnicos = Array.from(
+    new Map(tiposSuministro.map(t => [t.descripcion, t])).values()
+  )
+
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
@@ -51,15 +55,15 @@ export default function Home() {
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
-    const sum  = suministros.find(s => s.codigo === Number(suministroId))
-    const tipo = tiposSuministro.find(t => t.codigo === Number(tipoSeleccionado))
+    const sum  = suministros.find(s => s.id_suministro === Number(suministroId))
+    const tipo = tiposSuministro.find(t => t.id_tipo_suministro === Number(tipoSeleccionado))
     if (!sum) return
 
     setCarrito(prev => [...prev, {
       id: Date.now(),
-      suministroId:     sum.codigo,
+      suministroId:     sum.id_suministro,
       suministroNombre: sum.descripcion,
-      tipoId:           tipo.codigo,
+      tipoId:           tipo.id_tipo_suministro,
       tipoNombre:       tipo.descripcion,
       cantidad:         Number(cantidad),
       precioUnitario:   Number(sum.precio),
@@ -77,7 +81,7 @@ export default function Home() {
     setEnviando(true)
     setError('')
     try {
-      const res = await api.post('/pedidos', { pdvId: pdvSeleccionado.codigo, items: carrito })
+      const res = await api.post('/pedidos', { pdvId: pdvSeleccionado.id_pdv, items: carrito })
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
       setError(err.response?.data?.error || 'Error al procesar el pedido.')
@@ -98,15 +102,15 @@ export default function Home() {
           <h2 className="section-header">Punto de Venta</h2>
           <div className="pdv-selector-wrapper">
             <select
-              value={pdvSeleccionado?.codigo || ''}
+              value={pdvSeleccionado?.id_pdv || ''}
               onChange={e => {
-                const p = pdvs.find(p => p.codigo === Number(e.target.value))
+                const p = pdvs.find(p => p.id_pdv === Number(e.target.value))
                 setPdv(p || null)
               }}
               className="pdv-select">
               <option value="">Seleccionar PDV...</option>
               {pdvs.map(p => (
-                <option key={p.codigo} value={p.codigo}>{p.descripcion} — {p.ciudad}</option>
+                <option key={p.id_pdv} value={p.id_pdv}>{p.descripcion} — {p.ciudad}</option>
               ))}
             </select>
 
@@ -129,8 +133,8 @@ export default function Home() {
             <select value={tipoSeleccionado} onChange={e => setTipo(e.target.value)}
               className="form-select">
               <option value="">Tipo de suministro...</option>
-              {tiposSuministro.map(t => (
-                <option key={t.codigo} value={t.codigo}>{t.descripcion}</option>
+              {tiposSuministroUnicos.map(t => (
+                <option key={t.id_tipo_suministro} value={t.id_tipo_suministro}>{t.descripcion}</option>
               ))}
             </select>
 
@@ -139,7 +143,7 @@ export default function Home() {
               className="form-select">
               <option value="">Suministro...</option>
               {suministros.map(s => (
-                <option key={s.codigo} value={s.codigo}>
+                <option key={s.id_suministro} value={s.id_suministro}>
                   {s.descripcion} — ${Number(s.precio).toFixed(2)}
                 </option>
               ))}

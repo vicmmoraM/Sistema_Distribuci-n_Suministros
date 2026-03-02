@@ -52,7 +52,7 @@ function buildWhere(query, params) {
 const BASE_SELECT = `
   SELECT
     cp.codigo                         AS pedidoId,
-    cp.fecha,
+    DATE_FORMAT(cp.fecha, "%Y-%m-%d") AS fecha,
     u.login                           AS usuarioLogin,
     u.nombres                         AS usuarioNombre,
     p.descripcion                     AS pdvNombre,
@@ -102,13 +102,13 @@ router.get('/pedidos', requireAuth, async (req, res) => {
     paramsIds.push(limit, offset)
 
     const idsSQL = `
-      SELECT DISTINCT cp.codigo, cp.fecha
+      SELECT DISTINCT cp.codigo, DATE_FORMAT(cp.fecha, "%Y-%m-%d") AS fecha
       FROM cabecera_pedidos cp
       INNER JOIN usuarios u       ON cp.usuario     = u.codigo
       INNER JOIN pdvs p           ON cp.pdv         = p.codigo
       INNER JOIN estado_pedidos e ON cp.estadoPedido = e.codigo
       ${where}
-      ORDER BY cp.fecha DESC, cp.codigo DESC
+      ORDER BY fecha DESC, cp.codigo DESC
       LIMIT ? OFFSET ?
     `
     const [idRows] = await pool.query(idsSQL, paramsIds)

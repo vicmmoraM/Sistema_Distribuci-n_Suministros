@@ -12,7 +12,7 @@ const { requireAuth } = require('../middleware/auth');
  */
 router.get('/departamentos', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT codigo, descripcion FROM departamentos ORDER BY descripcion');
+    const [rows] = await pool.query('SELECT id_departamento, descripcion FROM departamentos ORDER BY descripcion');
     return res.json(rows);
   } catch (err) {
     console.error(err);
@@ -28,15 +28,15 @@ router.get('/pdvs', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT 
-        p.codigo,
+        p.id_pdv,
         p.descripcion,
         p.direccion,
-        c.descripcion AS ciudad,
+        z.zona AS ciudad,
         gp.monto_autorizado AS cupo
       FROM pdvs p
-      INNER JOIN ciudades c      ON p.ciudad    = c.codigo
-      INNER JOIN grupo_pdvs gp   ON p.grupo_pdv = gp.codigo
-      WHERE p.estado_pdv = 1
+      INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
+      INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
+      WHERE p.id_estado_pdv = 1
       ORDER BY p.descripcion
     `);
     return res.json(rows);
@@ -52,7 +52,15 @@ router.get('/pdvs', requireAuth, async (req, res) => {
  */
 router.get('/tipo-suministros', requireAuth, async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT codigo, descripcion FROM tipo_suministros ORDER BY descripcion');
+    const [rows] = await pool.query(`
+      SELECT
+        MIN(ts.id_tipo_suministro) AS id_tipo_suministro,
+        ts.descripcion
+      FROM tipo_suministros ts
+      INNER JOIN suministros s ON s.id_tipo_suministro = ts.id_tipo_suministro
+      GROUP BY ts.descripcion
+      ORDER BY ts.descripcion
+    `);
     return res.json(rows);
   } catch (err) {
     console.error(err);
@@ -73,7 +81,21 @@ router.get('/suministros', requireAuth, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'SELECT codigo, descripcion, precio FROM suministros WHERE tipo_suministro = ? ORDER BY descripcion',
+      `SELECT
+        s.id_suministro,
+        s.descripcion,
+        COALESCE(MIN(sp.precio_compra), 0) AS precio
+      FROM suministros s
+      INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
+      LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
+      WHERE ts.descripcion = (
+        SELECT descripcion
+        FROM tipo_suministros
+        WHERE id_tipo_suministro = ?
+        LIMIT 1
+      )
+      GROUP BY s.id_suministro, s.descripcion
+      ORDER BY s.descripcion`,
       [tipo]
     );
     return res.json(rows);

@@ -17,9 +17,16 @@ const PORT = process.env.PORT || 3001;
 // ── Middlewares globales ──────────────────────────────────────────────────────
 
 // CORS — solo permite peticiones desde el frontend React
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://10.101.13.75:5173,http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim());
+
 app.use(cors({
-  origin:      process.env.CORS_ORIGIN || 'http://10.101.13.149:5173',
+  origin:      corsOrigins.length > 1 ? corsOrigins : corsOrigins[0],
   credentials: true, // necesario para enviar cookies de sesión
+  methods:     ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
 }));
 
 // Parsear JSON
@@ -69,8 +76,8 @@ async function start() {
     console.log(`🚀 API disponible en la red!`);
     console.log(`🏠 Local:   http://localhost:${PORT}`);
     // Tip: Aquí podrías poner tu IP real para no perderte
-    console.log(`🌐 Red:     http://10.101.13.149:${PORT}`); 
-    console.log(`🛠️  CORS:    ${process.env.CORS_ORIGIN}`);
+    console.log(`🌐 Red:     http://10.101.13.75:${PORT}`); 
+    console.log(`🛠️  CORS:    ${corsOrigins.join(', ')}`);
   });
 }
 

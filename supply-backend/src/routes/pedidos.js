@@ -38,13 +38,13 @@ router.post('/', requireAuth, async (req, res) => {
 
     // ── 2. Verificar que el PDV existe y está activo ────────────────────────
     const [pdvRows] = await conn.query(
-      `SELECT p.codigo, p.descripcion, p.direccion,
-              c.descripcion AS ciudad,
+      `SELECT p.id_pdv, p.descripcion, p.direccion,
+              z.zona AS ciudad,
               gp.monto_autorizado AS cupo
        FROM pdvs p
-       INNER JOIN ciudades c    ON p.ciudad    = c.codigo
-       INNER JOIN grupo_pdvs gp ON p.grupo_pdv = gp.codigo
-       WHERE p.codigo = ? AND p.estado_pdv = 1`,
+       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
+       INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
+       WHERE p.id_pdv = ? AND p.id_estado_pdv = 1`,
       [pdvId]
     )
 
@@ -72,11 +72,14 @@ router.post('/', requireAuth, async (req, res) => {
 
       // Verificar que el suministro existe y está disponible
       const [sumRows] = await conn.query(
-        `SELECT s.codigo, s.descripcion, s.precio,
-                t.codigo AS tipoId, t.descripcion AS tipoNombre
+        `SELECT s.id_suministro, s.descripcion,
+          COALESCE(MIN(sp.precio_compra), 0) AS precio,
+          t.id_tipo_suministro AS tipoId, t.descripcion AS tipoNombre
          FROM suministros s
-         INNER JOIN tipo_suministros t ON s.tipo_suministro = t.codigo
-         WHERE s.codigo = ? AND s.estado_suministro = 1`,
+         INNER JOIN tipo_suministros t ON s.id_tipo_suministro = t.id_tipo_suministro
+         LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
+         WHERE s.id_suministro = ? AND s.id_estado_suministro = 1
+         GROUP BY s.id_suministro, s.descripcion, t.id_tipo_suministro, t.descripcion`,
         [item.suministroId]
       )
 
@@ -92,7 +95,7 @@ router.post('/', requireAuth, async (req, res) => {
 
       // Recalcular precio y total desde BD — ignoramos lo que mandó el frontend
       itemsValidados.push({
-        suministroId:     suministro.codigo,
+        suministroId:     suministro.id_suministro,
         suministroNombre: suministro.descripcion,
         tipoId:           suministro.tipoId,
         tipoNombre:       suministro.tipoNombre,
@@ -115,14 +118,14 @@ router.post('/', requireAuth, async (req, res) => {
 
     // ── 5. Obtener o crear usuario (Upsert) ────────────────────────────────
     const [usuRows] = await conn.query(
-      'SELECT codigo FROM usuarios WHERE login = ?',
+      'SELECT id_usuario FROM usuarios WHERE login = ?',
       [req.session.userlogin]
     )
 
     let usuarioId
     if (usuRows.length === 0) {
       const [ins] = await conn.query(
-        'INSERT INTO usuarios (departamento, rol, login, nombres, email) VALUES (?, 1, ?, ?, ?)',
+        'INSERT INTO usuarios (id_departamento, id_rol, login, nombres, email) VALUES (?, 1, ?, ?, ?)',
         [req.session.departamento, req.session.userlogin, req.session.username,
          `${req.session.userlogin}@farmcorp.com.ec`]
       )
@@ -130,23 +133,23 @@ router.post('/', requireAuth, async (req, res) => {
     } else {
       // Upsert — mantener datos sincronizados
       await conn.query(
-        'UPDATE usuarios SET nombres = ?, departamento = ? WHERE login = ?',
+        'UPDATE usuarios SET nombres = ?, id_departamento = ? WHERE login = ?',
         [req.session.username, req.session.departamento, req.session.userlogin]
       )
-      usuarioId = usuRows[0].codigo
+      usuarioId = usuRows[0].id_usuario
     }
 
     // ── 6. Insertar cabecera del pedido ────────────────────────────────────
     const [cabIns] = await conn.query(
-      'INSERT INTO cabecera_pedidos (usuario, pdv, estadoPedido, fecha) VALUES (?, ?, 1, ?)',
-      [usuarioId, pdvId, fecha]
+      'INSERT INTO cabecera_pedidos (id_usuario, id_pdv, id_estado_pedido) VALUES (?, ?, 1)',
+      [usuarioId, pdvId]
     )
     const cabeceraPedidoId = cabIns.insertId
 
     // ── 7. Insertar detalles ───────────────────────────────────────────────
     for (const item of itemsValidados) {
       await conn.query(
-        'INSERT INTO detalle_pedidos (cabPedido, suministro, cantidad, precioUnitario) VALUES (?, ?, ?, ?)',
+        'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
         [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario]
       )
     }
