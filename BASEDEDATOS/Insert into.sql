@@ -1,0 +1,46 @@
+use db_supplychain;
+-- SUMINISTROS FALTANTES DE LIMPIEZA D:
+INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra) VALUES 
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 18"X22" PAQUETE 10U NEGRA'),1,0.49),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 18"X22" PAQUETE 10U NEGRA' ),2,0.83),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 23X28 PAQUETE NEGRA'),1,0.96),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 23X28 PAQUETE NEGRA'),2,0.74),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 38"X55" NEGRA MUERTO 10U'),1,3.09),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'FUNDA 38"X55" NEGRA MUERTO 10U'),2,3.09),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'JERGA TRAPEADOR'),1,3.58),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'JERGA TRAPEADOR'),2,4.32),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'LUSTRE VERDE'),1,0.73),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'LUSTRE VERDE'),2,0.63),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MANO DE OSO'),1,3.74),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MANO DE OSO'),2,2.48),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'PAPEL HIGIENICO P/DISPENSADOR'),1,3.33),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'PAPEL HIGIENICO P/DISPENSADOR'),2,3.39),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'TOALLA DE MANO RECTANGULARES'),1,3.21),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'TOALLA DE MANO RECTANGULARES'),2,3.21);
+
+-- SUMINISTROS FALTANTES DE OFICINA D:
+INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra) VALUES
+((SELECT id_suministro FROM suministros WHERE descripcion = 'BOLIGRAFO BIC P/MEDIO NEGRO'),1,0.41),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'BOLIGRAFO BIC P/MEDIO NEGRO'),2,0.40),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'BOLIGRAFO BIC P/MEDIO ROJO'),1,0.41),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'BOLIGRAFO BIC P/MEDIO ROJO'),2,0.40),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'CUADERNO UNIVERSITARIO CUADRO 100H'),1,1.82),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'CUADERNO UNIVERSITARIO CUADRO 100H'),2,1.82),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'GRAPADORA'),1,4.43),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'GRAPADORA'),2,3.38),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE AZUL'),1,0.75),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE AZUL'),2,0.84),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE NEGRO'),1,0.75),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE NEGRO'),2,0.84),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE ROJO'),1,0.75),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR BORRABLE ROJO'),2,0.84),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE AZUL'),1,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE AZUL'),2,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE NEGRO'),1,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE NEGRO'),2,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE ROJO'),1,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'MARCADOR PERMANENTE ROJO'),2,0.65),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'RESALTADOR'),1,0.71),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'RESALTADOR'),2,0.64),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'SOBRE MANILA A4 F3'),1,0.18),
+((SELECT id_suministro FROM suministros WHERE descripcion = 'SOBRE MANILA A4 F3'),2,0.12);
