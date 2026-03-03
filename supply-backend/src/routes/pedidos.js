@@ -73,14 +73,27 @@ router.post('/', requireAuth, async (req, res) => {
       // Verificar que el suministro existe y está disponible
       const [sumRows] = await conn.query(
         `SELECT s.id_suministro, s.descripcion,
-          COALESCE(MIN(sp.precio_compra), 0) AS precio,
+          COALESCE(
+            MIN(sp.precio_compra),
+            (
+              SELECT sp2.precio_compra
+              FROM suministros_precios sp2
+              WHERE sp2.id_suministro = s.id_suministro
+              ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
+              LIMIT 1
+            ),
+            0
+          ) AS precio,
           t.id_tipo_suministro AS tipoId, t.descripcion AS tipoNombre
          FROM suministros s
          INNER JOIN tipo_suministros t ON s.id_tipo_suministro = t.id_tipo_suministro
-         LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
+         LEFT JOIN pdvs p ON p.id_pdv = ?
+         LEFT JOIN suministros_precios sp
+           ON sp.id_suministro = s.id_suministro
+          AND (p.id_proveedor_principal IS NULL OR sp.id_proveedor = p.id_proveedor_principal)
          WHERE s.id_suministro = ? AND s.id_estado_suministro = 1
          GROUP BY s.id_suministro, s.descripcion, t.id_tipo_suministro, t.descripcion`,
-        [item.suministroId]
+        [pdvId, item.suministroId]
       )
 
       if (sumRows.length === 0) {

@@ -29,7 +29,6 @@ function bindAdmin(client) {
 
 function searchUser(client, username) {
   return new Promise((resolve, reject) => {
-    // ✅ Busca en todo el BASE_DN, sin depender del department
     const searchOptions = {
       filter: `(&(objectClass=user)(sAMAccountName=${username.trim()}))`,
       scope: 'sub',
@@ -66,7 +65,6 @@ function searchUser(client, username) {
 }
 
 function extractUserData(entry) {
-  // ✅ Usa entry.pojo, la forma correcta en ldapjs moderno
   const rawAttributes = entry.pojo?.attributes || [];
   const attributes = {};
 
@@ -125,4 +123,54 @@ async function authenticateUser(username, password) {
   }
 }
 
-module.exports = { authenticateUser };
+/**
+ * Obtiene el departamento de un usuario desde LDAP sin autenticar
+ * Extrae el departamento del DN (OU más cercano al CN)
+ */
+async function getUserDepartmentFromLDAP(username) {
+  if (!LDAP_URL) return Promise.reject(new Error('LDAP_URL no configurado'));
+
+  const cleanUsername = username.trim();
+  console.log('=== Obteniendo departamento de LDAP para:', cleanUsername, '===');
+  const client = createClient();
+
+  try {
+    await bindAdmin(client);
+    const entry = await searchUser(client, cleanUsername);
+    const userData = extractUserData(entry);
+
+    console.log('Usuario encontrado, DN:', userData.dn);
+
+    const dnParts = userData.dn.split(',');
+    let department = null;
+
+    for (let i = 0; i < dnParts.length; i++) {
+      const part = dnParts[i].trim();
+      if (part.toUpperCase().startsWith('OU=')) {
+        department = part.substring(3); 
+        break;
+      }
+    }
+
+    client.unbind();
+    client.destroy();
+
+    if (!department) {
+      throw new Error('No se pudo extraer el departamento del DN');
+    }
+
+    return {
+      username: userData.sAMAccountName,
+      displayName: userData.displayName,
+      dn: userData.dn,
+      department: department,
+    };
+  } catch (err) {
+    console.error('Error al obtener departamento:', err.message);
+    client.unbind();
+    client.destroy();
+    throw err;
+  }
+}
+
+module.exports = { authenticateUser, getUserDepartmentFromLDAP };

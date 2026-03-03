@@ -15,26 +15,44 @@ function buildWhere(query, params) {
   const conditions = []
 
   if (query.mes && query.anio) {
-    conditions.push('MONTH(cp.fecha) = ? AND YEAR(cp.fecha) = ?')
+    conditions.push('MONTH(cp.fecha_registro) = ? AND YEAR(cp.fecha_registro) = ?')
     params.push(Number(query.mes), Number(query.anio))
   } else if (query.anio) {
-    conditions.push('YEAR(cp.fecha) = ?')
+    conditions.push('YEAR(cp.fecha_registro) = ?')
     params.push(Number(query.anio))
   }
 
   if (query.fechaDesde) {
-    conditions.push('cp.fecha >= ?')
+    conditions.push('cp.fecha_registro >= ?')
     params.push(query.fechaDesde)
   }
 
   if (query.fechaHasta) {
-    conditions.push('cp.fecha <= ?')
+    conditions.push('cp.fecha_registro <= ?')
     params.push(query.fechaHasta)
   }
 
   if (query.pdv) {
-    conditions.push('cp.pdv = ?')
+    conditions.push('cp.id_pdv = ?')
     params.push(Number(query.pdv))
+  }
+
+  if (query.estado) {
+    conditions.push('cp.id_estado_pedido = ?')
+    params.push(Number(query.estado))
+  }
+
+  if (query.tipoSuministro) {
+    conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM detalle_pedidos dpf
+        INNER JOIN suministros sf ON sf.id_suministro = dpf.id_suministro
+        WHERE dpf.id_pedido = cp.id_pedido
+          AND sf.id_tipo_suministro = ?
+      )
+    `)
+    params.push(Number(query.tipoSuministro))
   }
 
   if (query.usuario) {
@@ -47,30 +65,36 @@ function buildWhere(query, params) {
 
 /**
  * Query base: 1 fila por ítem.
- * Incluye suministro, tipo de suministro, cantidad, precio y subtotal.
+ * Incluye suministro, tipo de suministro, cantidad, precio, proveedor, código zona y subtotal.
  */
 const BASE_SELECT = `
   SELECT
-    cp.codigo                         AS pedidoId,
-    DATE_FORMAT(cp.fecha, "%Y-%m-%d") AS fecha,
+    cp.id_pedido                              AS pedidoId,
+    DATE_FORMAT(cp.fecha_registro, "%Y-%m-%d") AS fecha,
     u.login                           AS usuarioLogin,
     u.nombres                         AS usuarioNombre,
     p.descripcion                     AS pdvNombre,
+    COALESCE(zc.codigo_zona, '') AS codigoZona,
     e.descripcion                     AS estado,
     ts.descripcion                    AS tipoSuministro,
     s.descripcion                     AS suministro,
+    COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
     dp.cantidad,
-    dp.precioUnitario,
-    (dp.cantidad * dp.precioUnitario) AS subtotal
+    dp.precio_unitario AS precioUnitario,
+    (dp.cantidad * dp.precio_unitario) AS subtotal
   FROM cabecera_pedidos cp
-  INNER JOIN usuarios u          ON cp.usuario        = u.codigo
-  INNER JOIN pdvs p              ON cp.pdv            = p.codigo
-  INNER JOIN estado_pedidos e    ON cp.estadoPedido   = e.codigo
-  INNER JOIN detalle_pedidos dp  ON dp.cabPedido      = cp.codigo
-  INNER JOIN suministros s       ON dp.suministro     = s.codigo
-  INNER JOIN tipo_suministros ts ON s.tipo_suministro = ts.codigo
+  INNER JOIN usuarios u          ON cp.id_usuario       = u.id_usuario
+  INNER JOIN pdvs p              ON cp.id_pdv           = p.id_pdv
+  LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
+  INNER JOIN estado_pedidos e    ON cp.id_estado_pedido = e.id_estado_pedido
+  INNER JOIN detalle_pedidos dp  ON dp.id_pedido        = cp.id_pedido
+  INNER JOIN suministros s       ON dp.id_suministro    = s.id_suministro
+  INNER JOIN tipo_suministros ts ON s.id_tipo_suministro = ts.id_tipo_suministro
+  LEFT JOIN suministros_precios sp ON dp.id_suministro = sp.id_suministro 
+                                   AND dp.precio_unitario = sp.precio_compra
+  LEFT JOIN proveedores pr       ON sp.id_proveedor = pr.id_proveedor
 `
-const ORDER_BY = `ORDER BY cp.fecha DESC, cp.codigo DESC, ts.descripcion, s.descripcion`
+const ORDER_BY = `ORDER BY cp.fecha_registro DESC, cp.id_pedido DESC, ts.descripcion, s.descripcion`
 
 /**
  * GET /api/reportes/pedidos
@@ -87,11 +111,11 @@ router.get('/pedidos', requireAuth, async (req, res) => {
     const where       = buildWhere(req.query, paramsCount)
 
     const countSQL = `
-      SELECT COUNT(DISTINCT cp.codigo) AS total
+      SELECT COUNT(DISTINCT cp.id_pedido) AS total
       FROM cabecera_pedidos cp
-      INNER JOIN usuarios u       ON cp.usuario     = u.codigo
-      INNER JOIN pdvs p           ON cp.pdv         = p.codigo
-      INNER JOIN estado_pedidos e ON cp.estadoPedido = e.codigo
+      INNER JOIN usuarios u       ON cp.id_usuario = u.id_usuario
+      INNER JOIN pdvs p           ON cp.id_pdv = p.id_pdv
+      INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
       ${where}
     `
     const [[{ total }]] = await pool.query(countSQL, paramsCount)
@@ -102,13 +126,13 @@ router.get('/pedidos', requireAuth, async (req, res) => {
     paramsIds.push(limit, offset)
 
     const idsSQL = `
-      SELECT DISTINCT cp.codigo, DATE_FORMAT(cp.fecha, "%Y-%m-%d") AS fecha
+      SELECT DISTINCT cp.id_pedido, DATE_FORMAT(cp.fecha_registro, "%Y-%m-%d") AS fecha
       FROM cabecera_pedidos cp
-      INNER JOIN usuarios u       ON cp.usuario     = u.codigo
-      INNER JOIN pdvs p           ON cp.pdv         = p.codigo
-      INNER JOIN estado_pedidos e ON cp.estadoPedido = e.codigo
+      INNER JOIN usuarios u       ON cp.id_usuario = u.id_usuario
+      INNER JOIN pdvs p           ON cp.id_pdv = p.id_pdv
+      INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
       ${where}
-      ORDER BY fecha DESC, cp.codigo DESC
+      ORDER BY fecha DESC, cp.id_pedido DESC
       LIMIT ? OFFSET ?
     `
     const [idRows] = await pool.query(idsSQL, paramsIds)
@@ -117,15 +141,18 @@ router.get('/pedidos', requireAuth, async (req, res) => {
       return res.json({ data: [], total: Number(total), page, limit, totalPages: Math.ceil(Number(total) / limit) })
     }
 
-    const ids          = idRows.map(r => r.codigo)
+    const ids          = idRows.map(r => r.id_pedido)
     const placeholders = ids.map(() => '?').join(',')
 
+    const tipoSuministroFilter = req.query.tipoSuministro ? ' AND s.id_tipo_suministro = ?' : ''
     const dataSQL = `
       ${BASE_SELECT}
-      WHERE cp.codigo IN (${placeholders})
+      WHERE cp.id_pedido IN (${placeholders})${tipoSuministroFilter}
       ${ORDER_BY}
     `
-    const [rows] = await pool.query(dataSQL, ids)
+    const dataParams = [...ids]
+    if (req.query.tipoSuministro) dataParams.push(Number(req.query.tipoSuministro))
+    const [rows] = await pool.query(dataSQL, dataParams)
 
     return res.json({
       data:       rows,
@@ -149,8 +176,14 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     const params = []
     const where  = buildWhere(req.query, params)
 
-    const dataSQL = `${BASE_SELECT} ${where} ${ORDER_BY}`
-    const [rows]  = await pool.query(dataSQL, params)
+    let dataSQL = `${BASE_SELECT} ${where}`
+    const dataParams = [...params]
+    if (req.query.tipoSuministro) {
+      dataSQL += `${where ? ' AND' : ' WHERE'} s.id_tipo_suministro = ?`
+      dataParams.push(Number(req.query.tipoSuministro))
+    }
+    dataSQL += ` ${ORDER_BY}`
+    const [rows]  = await pool.query(dataSQL, dataParams)
 
     const workbook = new ExcelJS.Workbook()
     workbook.creator = 'Sistema de Suministros FarmCorp'
@@ -160,7 +193,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     })
 
     // Título
-    sheet.mergeCells('A1:J1')
+    sheet.mergeCells('A1:L1')
     const titleCell = sheet.getCell('A1')
     titleCell.value = 'Reporte de Pedidos de Suministros'
     titleCell.font  = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } }
@@ -178,9 +211,19 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       filtroTexto = `${req.query.fechaDesde || '...'} → ${req.query.fechaHasta || '...'}`
     }
 
-    sheet.mergeCells('A2:J2')
+    const [estadoRows] = req.query.estado
+      ? await pool.query('SELECT descripcion FROM estado_pedidos WHERE id_estado_pedido = ?', [Number(req.query.estado)])
+      : [[]]
+    const [tipoRows] = req.query.tipoSuministro
+      ? await pool.query('SELECT descripcion FROM tipo_suministros WHERE id_tipo_suministro = ?', [Number(req.query.tipoSuministro)])
+      : [[]]
+    const estadoTexto = req.query.estado ? (estadoRows[0]?.descripcion || 'N/A') : 'Todos'
+    const tipoTexto = req.query.tipoSuministro ? (tipoRows[0]?.descripcion || 'N/A') : 'Todos'
+    const pdvTexto = req.query.pdv ? rows.find(r => String(r.pdvNombre || '').length > 0)?.pdvNombre || 'N/A' : 'Todos'
+
+    sheet.mergeCells('A2:L2')
     const subCell = sheet.getCell('A2')
-    subCell.value = `Período: ${filtroTexto}  |  Generado: ${new Date().toLocaleString('es-EC')}`
+    subCell.value = `Período: ${filtroTexto}  |  PDV: ${pdvTexto}  |  Estado: ${estadoTexto}  |  Tipo: ${tipoTexto}  |  Generado: ${new Date().toLocaleString('es-EC')}`
     subCell.font  = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF555555' } }
     subCell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EDF5' } }
     subCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 }
@@ -194,9 +237,11 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       { header: 'Fecha',            key: 'fecha',           width: 14 },
       { header: 'Usuario',          key: 'usuarioNombre',   width: 26 },
       { header: 'PDV',              key: 'pdvNombre',       width: 26 },
+      { header: 'Código Zona',      key: 'codigoZona',      width: 14 },
       { header: 'Estado',           key: 'estado',          width: 14 },
       { header: 'Tipo Suministro',  key: 'tipoSuministro',  width: 20 },
       { header: 'Suministro',       key: 'suministro',      width: 30 },
+      { header: 'Proveedor',        key: 'proveedor',       width: 24 },
       { header: 'Cantidad',         key: 'cantidad',        width: 10 },
       { header: 'P. Unitario ($)',  key: 'precioUnitario',  width: 15 },
       { header: 'Subtotal ($)',     key: 'subtotal',        width: 14 },
@@ -220,6 +265,12 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     })
     headerRow.height = 22
 
+    // Activar filtros en encabezados (fila 4)
+    sheet.autoFilter = {
+      from: { row: 4, column: 1 },
+      to: { row: 4, column: HEADERS.length },
+    }
+
     // Filas de datos
     let lastPedidoId = null
     let colorToggle  = false
@@ -231,15 +282,15 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       if (isPedidoNuevo && lastPedidoId !== null) {
         // Fila subtotal del pedido anterior
         const subRow = sheet.addRow({
-          pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', estado: '',
+          pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
           tipoSuministro: '', suministro: `Subtotal pedido #${lastPedidoId}`,
-          cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
+          proveedor: '', cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
         })
         subRow.eachCell({ includeEmpty: true }, (cell, col) => {
           cell.font = { name: 'Calibri', size: 9, bold: true, italic: true, color: { argb: 'FF1B3A6B' } }
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F7' } }
-          if (col === 10) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
-          if (col === 7)  { cell.alignment = { horizontal: 'right' } }
+          if (col === 12) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
+          if (col === 8)  { cell.alignment = { horizontal: 'right' } }
         })
         pedidoTotal = 0
         colorToggle = !colorToggle
@@ -255,9 +306,11 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
         fecha:          isPedidoNuevo && row.fecha ? new Date(row.fecha).toLocaleDateString('es-EC') : '',
         usuarioNombre:  isPedidoNuevo ? row.usuarioNombre : '',
         pdvNombre:      isPedidoNuevo ? row.pdvNombre : '',
+        codigoZona:     isPedidoNuevo ? row.codigoZona : '',
         estado:         isPedidoNuevo ? row.estado : '',
         tipoSuministro: row.tipoSuministro,
         suministro:     row.suministro,
+        proveedor:      row.proveedor,
         cantidad:       row.cantidad,
         precioUnitario: Number(row.precioUnitario),
         subtotal:       Number(row.subtotal),
@@ -272,8 +325,8 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
           left:   { style: 'hair', color: { argb: 'FFDDDDDD' } },
           right:  { style: 'hair', color: { argb: 'FFDDDDDD' } },
         }
-        if (col === 9 || col === 10) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
-        if (col === 8) cell.alignment = { horizontal: 'center' }
+        if (col === 11 || col === 12) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
+        if (col === 10) cell.alignment = { horizontal: 'center' }
         if (col === 1) cell.alignment = { horizontal: 'center' }
       })
     })
@@ -281,15 +334,15 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     // Subtotal del último pedido
     if (lastPedidoId !== null) {
       const subRow = sheet.addRow({
-        pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', estado: '',
+        pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
         tipoSuministro: '', suministro: `Subtotal pedido #${lastPedidoId}`,
-        cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
+        proveedor: '', cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
       })
       subRow.eachCell({ includeEmpty: true }, (cell, col) => {
         cell.font = { name: 'Calibri', size: 9, bold: true, italic: true, color: { argb: 'FF1B3A6B' } }
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F7' } }
-        if (col === 10) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
-        if (col === 7)  { cell.alignment = { horizontal: 'right' } }
+        if (col === 12) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
+        if (col === 8)  { cell.alignment = { horizontal: 'right' } }
       })
     }
 
@@ -297,15 +350,15 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     sheet.addRow([])
     const totalGeneral = rows.reduce((s, r) => s + Number(r.subtotal), 0)
     const totalRow = sheet.addRow({
-      pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', estado: '',
-      tipoSuministro: '', suministro: '', cantidad: '', precioUnitario: 'TOTAL GENERAL',
+      pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
+      tipoSuministro: '', suministro: '', proveedor: '', cantidad: '', precioUnitario: 'TOTAL GENERAL',
       subtotal: totalGeneral,
     })
     totalRow.eachCell({ includeEmpty: true }, (cell, col) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B3A6B' } }
       cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } }
-      if (col === 10) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
-      if (col === 9)  { cell.alignment = { horizontal: 'right' } }
+      if (col === 12) { cell.numFmt = '"$"#,##0.00'; cell.alignment = { horizontal: 'right' } }
+      if (col === 11)  { cell.alignment = { horizontal: 'right' } }
     })
 
     const fechaArchivo = new Date().toISOString().slice(0, 10)

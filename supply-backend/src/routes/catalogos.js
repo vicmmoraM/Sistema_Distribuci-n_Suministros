@@ -32,10 +32,12 @@ router.get('/pdvs', requireAuth, async (req, res) => {
         p.descripcion,
         p.direccion,
         z.zona AS ciudad,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor,
         gp.monto_autorizado AS cupo
       FROM pdvs p
       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
       INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
+      LEFT JOIN proveedores pr       ON p.id_proveedor_principal = pr.id_proveedor
       WHERE p.id_estado_pdv = 1
       ORDER BY p.descripcion
     `);
@@ -69,11 +71,29 @@ router.get('/tipo-suministros', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/catalogos/estados-pedido
+ * Lista todos los estados de pedidos para filtros de reportes.
+ */
+router.get('/estados-pedido', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT id_estado_pedido, descripcion
+      FROM estado_pedidos
+      ORDER BY descripcion
+    `);
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Error al obtener estados de pedido.' });
+  }
+});
+
+/**
  * GET /api/catalogos/suministros?tipo=1
  * Lista suministros filtrados por tipo.
  */
 router.get('/suministros', requireAuth, async (req, res) => {
-  const { tipo } = req.query;
+  const { tipo, pdv } = req.query;
 
   if (!tipo) {
     return res.status(400).json({ error: 'El parámetro "tipo" es requerido.' });
@@ -84,10 +104,36 @@ router.get('/suministros', requireAuth, async (req, res) => {
       `SELECT
         s.id_suministro,
         s.descripcion,
-        COALESCE(MIN(sp.precio_compra), 0) AS precio
+        COALESCE(
+          MIN(sp.precio_compra),
+          (
+            SELECT sp2.precio_compra
+            FROM suministros_precios sp2
+            WHERE sp2.id_suministro = s.id_suministro
+            ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
+            LIMIT 1
+          ),
+          0
+        ) AS precio,
+        COALESCE(
+          MAX(pr.nombre_proveedor),
+          (
+            SELECT pr2.nombre_proveedor
+            FROM suministros_precios sp2
+            INNER JOIN proveedores pr2 ON pr2.id_proveedor = sp2.id_proveedor
+            WHERE sp2.id_suministro = s.id_suministro
+            ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
+            LIMIT 1
+          ),
+          'Sin proveedor'
+        ) AS proveedor
       FROM suministros s
       INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
-      LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
+      LEFT JOIN pdvs p ON p.id_pdv = ?
+      LEFT JOIN suministros_precios sp
+        ON sp.id_suministro = s.id_suministro
+       AND (p.id_proveedor_principal IS NULL OR sp.id_proveedor = p.id_proveedor_principal)
+      LEFT JOIN proveedores pr ON pr.id_proveedor = sp.id_proveedor
       WHERE ts.descripcion = (
         SELECT descripcion
         FROM tipo_suministros
@@ -96,7 +142,7 @@ router.get('/suministros', requireAuth, async (req, res) => {
       )
       GROUP BY s.id_suministro, s.descripcion
       ORDER BY s.descripcion`,
-      [tipo]
+      [pdv || null, tipo]
     );
     return res.json(rows);
   } catch (err) {
