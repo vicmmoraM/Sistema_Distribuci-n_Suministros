@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
-import './Login.css'
+import '../style/Login.css'
 
 // Iconos SVG inline
 const BuildingIcon = () => (
@@ -38,6 +38,8 @@ export default function Login() {
   const [form, setForm] = useState({ username: '', password: '', departmentId: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [deptAutoFilled, setDeptAutoFilled] = useState(false)
+  const [getUserError, setGetUserError] = useState('')
 
   useEffect(() => {
     if (user) navigate('/home', { replace: true })
@@ -49,14 +51,43 @@ export default function Login() {
       .catch(() => setError('No se pudo cargar la lista de departamentos.'))
   }, [])
 
+  // Obtener el departamento del usuario cuando cambia el username
+  const handleUsernameBlur = async () => {
+    if (!form.username.trim()) {
+      setDeptAutoFilled(false)
+      setGetUserError('')
+      return
+    }
+
+    try {
+      setGetUserError('')
+      const res = await api.get(`/auth/departamento/${form.username}`)
+      const { id_departamento, departmentName } = res.data
+      
+      // Auto-llenar el departamento
+      setForm(f => ({ ...f, departmentId: id_departamento }))
+      setDeptAutoFilled(true)
+    } catch (err) {
+      setDeptAutoFilled(false)
+      setGetUserError(err.response?.data?.error || 'Usuario no encontrado.')
+      setForm(f => ({ ...f, departmentId: '' }))
+    }
+  }
+
   const handleChange = e => {
-    setForm({ ...form, [e.target.name]: e.target.value })
+    const { name, value } = e.target
+    // Si cambia el username, resetear auto-fill
+    if (name === 'username') {
+      setDeptAutoFilled(false)
+      setGetUserError('')
+    }
+    setForm({ ...form, [name]: value })
     setError('')
   }
 
   const handleSubmit = async e => {
     e.preventDefault()
-    if (!form.departmentId) { setError('Selecciona tu departamento.'); return }
+    if (!form.departmentId) { setError('Debes ingresar un usuario válido.'); return }
     setLoading(true)
     try {
       await login(form.username, form.password, form.departmentId)
@@ -113,6 +144,7 @@ export default function Login() {
                   name="username"
                   value={form.username}
                   onChange={handleChange}
+                  onBlur={handleUsernameBlur}
                   placeholder="nombre.apellido"
                   required
                   autoComplete="username"
@@ -154,14 +186,65 @@ export default function Login() {
                   name="departmentId"
                   value={form.departmentId}
                   onChange={handleChange}
+                  disabled={deptAutoFilled}
                   required
-                  className="form-select">
+                  className="form-select"
+                  style={{
+                    cursor: deptAutoFilled ? 'not-allowed' : 'pointer',
+                    opacity: deptAutoFilled ? 0.8 : 1,
+                    backgroundColor: deptAutoFilled ? '#f3f4f6' : 'white',
+                  }}>
                   <option value="">Seleccionar departamento...</option>
                   {departamentos.map(d => (
                     <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
                   ))}
                 </select>
               </div>
+              {deptAutoFilled && (
+                <div style={{ 
+                  marginTop: '0.5rem', 
+                  fontSize: '0.875rem', 
+                  color: '#059669',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem'
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span>Detectado automáticamente</span>
+                </div>
+              )}
+              {!deptAutoFilled && !getUserError && (
+                <div style={{ 
+                  marginTop: '0.5rem', 
+                  fontSize: '0.875rem', 
+                  color: '#6b7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem'
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <span>Escribe tu usuario arriba para auto-rellenar</span>
+                </div>
+              )}
+              {getUserError && (
+                <div style={{ 
+                  marginTop: '0.5rem', 
+                  fontSize: '0.875rem', 
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.375rem'
+                }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>{getUserError}</span>
+                </div>
+              )}
             </div>
 
             {/* Error */}

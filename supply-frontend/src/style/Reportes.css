@@ -424,7 +424,7 @@
 
 /* ── Responsive ──────────────────────────────── */
 @media (max-width: 768px) {
-  .rep-wrapper { padding: 1rem; }
+  .rep-wrapper { padding: 1rem; margin-left: 0 !important; }
   .rep-title    { font-size: 1.3rem; }
   .rep-filtros__campos { flex-direction: column; }
   .rep-campo, .rep-campo--wide { min-width: unset; width: 100%; }

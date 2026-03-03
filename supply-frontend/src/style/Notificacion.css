@@ -201,6 +201,9 @@
 
 /* ── Responsive ──────────────────────────────── */
 @media (max-width: 480px) {
+  .notif-body {
+    margin-left: 0 !important;
+  }
   .notif-card {
     padding: 2rem 1.25rem;
   }

@@ -1,10 +1,11 @@
 // src/pages/Reportes.jsx
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useSidebar } from '../context/SidebarContext'
 import api from '../api/axios'
 import Navbar from '../components/Navbar'
 import Sidebar from '../components/Sidebar'
-import './Reportes.css'
+import '../style/Reportes.css'
 
 const MESES = [
   '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -28,6 +29,8 @@ function buildParams(filtros) {
     if (filtros.fechaHasta) p.fechaHasta = filtros.fechaHasta
   }
   if (filtros.pdv)     p.pdv     = filtros.pdv
+  if (filtros.estado)  p.estado  = filtros.estado
+  if (filtros.tipoSuministro) p.tipoSuministro = filtros.tipoSuministro
   if (filtros.usuario) p.usuario = filtros.usuario
   return p
 }
@@ -51,6 +54,7 @@ function agruparPorPedido(rows) {
     pedido.items.push({
       tipoSuministro: row.tipoSuministro,
       suministro:     row.suministro,
+      proveedor:      row.proveedor,
       cantidad:       row.cantidad,
       precioUnitario: Number(row.precioUnitario),
       subtotal:       Number(row.subtotal),
@@ -62,6 +66,7 @@ function agruparPorPedido(rows) {
 
 export default function Reportes() {
   const { loading: authLoading } = useAuth()
+  const { isCollapsed } = useSidebar()
 
   const anioActual = new Date().getFullYear()
   const mesActual  = new Date().getMonth() + 1
@@ -73,6 +78,8 @@ export default function Reportes() {
     fechaDesde: '',
     fechaHasta: '',
     pdv:        '',
+    estado:     '',
+    tipoSuministro: '',
     usuario:    '',
   })
 
@@ -81,11 +88,15 @@ export default function Reportes() {
   const [cargando,    setCargando]    = useState(false)
   const [error,       setError]       = useState(null)
   const [pdvs,        setPdvs]        = useState([])
+  const [estados,     setEstados]     = useState([])
+  const [tiposSuministro, setTiposSuministro] = useState([])
   const [descargando, setDescargando] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
     api.get('/catalogos/pdvs').then(r => setPdvs(r.data)).catch(() => {})
+    api.get('/catalogos/estados-pedido').then(r => setEstados(r.data)).catch(() => {})
+    api.get('/catalogos/tipo-suministros').then(r => setTiposSuministro(r.data)).catch(() => {})
   }, [authLoading])
 
   const cargarPedidos = useCallback(async (page = 1) => {
@@ -120,7 +131,7 @@ export default function Reportes() {
   function handleLimpiar() {
     setFiltros({
       modo: 'mes', mes: String(mesActual), anio: String(anioActual),
-      fechaDesde: '', fechaHasta: '', pdv: '', usuario: '',
+      fechaDesde: '', fechaHasta: '', pdv: '', estado: '', tipoSuministro: '', usuario: '',
     })
   }
 
@@ -155,7 +166,7 @@ export default function Reportes() {
       <Navbar />
       <Sidebar />
 
-      <div className="rep-wrapper" style={{ marginLeft: 250 }}>
+      <div className="rep-wrapper" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
 
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="rep-header">
@@ -173,7 +184,14 @@ export default function Reportes() {
             disabled={descargando || pedidos.length === 0}>
             {descargando
               ? <><span className="rep-spinner" /> Generando...</>
-              : <><span className="rep-icon"></span> Exportar Excel</>}
+              : <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M10 12L14 16M14 12L10 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Exportar Excel
+                </>}
           </button>
         </div>
 
@@ -234,6 +252,26 @@ export default function Reportes() {
             </div>
 
             <div className="rep-campo">
+              <label>Estado</label>
+              <select name="estado" value={filtros.estado} onChange={handleFiltroChange}>
+                <option value="">Todos los estados</option>
+                {estados.map(e => (
+                  <option key={e.id_estado_pedido} value={e.id_estado_pedido}>{e.descripcion}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rep-campo">
+              <label>Tipo suministro</label>
+              <select name="tipoSuministro" value={filtros.tipoSuministro} onChange={handleFiltroChange}>
+                <option value="">Todos los tipos</option>
+                {tiposSuministro.map(t => (
+                  <option key={t.id_tipo_suministro} value={t.id_tipo_suministro}>{t.descripcion}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rep-campo">
               <label>Usuario (login)</label>
               <input type="text" name="usuario" value={filtros.usuario}
                 onChange={handleFiltroChange} placeholder="ej. juan.perez" />
@@ -271,6 +309,7 @@ export default function Reportes() {
                   <th>Estado</th>
                   <th>Tipo Suministro</th>
                   <th>Suministro</th>
+                  <th>Proveedor</th>
                   <th className="rep-th--center">Cant.</th>
                   <th className="rep-th--right">P. Unit.</th>
                   <th className="rep-th--right">Subtotal</th>
@@ -313,6 +352,7 @@ export default function Reportes() {
 
                       <td className="rep-td--tipo">{item.tipoSuministro}</td>
                       <td className="rep-td--suministro">{item.suministro}</td>
+                      <td className="rep-td--proveedor">{item.proveedor}</td>
                       <td className="rep-td--center">{item.cantidad}</td>
                       <td className="rep-td--right rep-td--precio">
                         ${item.precioUnitario.toFixed(2)}
@@ -326,7 +366,7 @@ export default function Reportes() {
               </tbody>
               <tfoot>
                 <tr className="rep-tfoot-row">
-                  <td colSpan={9} className="rep-tfoot__label">
+                  <td colSpan={10} className="rep-tfoot__label">
                     Total general ({paginacion.total} pedidos)
                   </td>
                   <td className="rep-tfoot__total">${totalGeneral.toFixed(2)}</td>

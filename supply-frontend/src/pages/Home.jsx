@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useSidebar } from '../context/SidebarContext'
+import { usePermissions } from '../hooks/usePermissions'
 import api from '../api/axios'
 import Navbar from '../components/Navbar'
 import Sidebar from '../components/Sidebar'
-import './Home.css'
+import '../style/Home.css'
 
 export default function Home() {
   const { user, loading } = useAuth()
+  const { isCollapsed } = useSidebar()
+  const { esComercial } = usePermissions()
   const navigate = useNavigate()
 
   // Catálogos
@@ -35,17 +39,29 @@ export default function Home() {
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
-    api.get('/catalogos/pdvs').then(r => setPdvs(r.data)).catch(() => {})
+    api.get('/catalogos/pdvs').then(r => {
+      setPdvs(r.data)
+      // Auto-seleccionar PDV según el usuario autenticado
+      if (user?.login) {
+        const pdvDelUsuario = r.data.find(p => 
+          p.descripcion.toLowerCase() === user.login.toLowerCase()
+        )
+        if (pdvDelUsuario) {
+          setPdv(pdvDelUsuario)
+        }
+      }
+    }).catch(() => {})
     api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => {})
-  }, [loading])
+  }, [loading, user?.login])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
     if (!tipoSeleccionado) { setSuministros([]); setSuministroId(''); return }
-    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}`)
+    const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
+    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`)
       .then(r => { setSuministros(r.data); setSuministroId('') })
       .catch(() => {})
-  }, [tipoSeleccionado])
+  }, [tipoSeleccionado, pdvSeleccionado?.id_pdv])
 
   // Totales
   const subtotalOficina  = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
@@ -95,32 +111,35 @@ export default function Home() {
       <Navbar />
       <Sidebar />
 
-      <main className="home-main" style={{ marginLeft: 250 }}>
+      <main className="home-main" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
 
-        {/* PDV Selection */}
+        {/* Departamento / Punto de venta */}
         <section className="section-card">
-          <h2 className="section-header">Punto de Venta</h2>
+          <h2 className="section-header">{esComercial ? 'Punto de venta' : 'Departamento'}</h2>
           <div className="pdv-selector-wrapper">
-            <select
-              value={pdvSeleccionado?.id_pdv || ''}
-              onChange={e => {
-                const p = pdvs.find(p => p.id_pdv === Number(e.target.value))
-                setPdv(p || null)
-              }}
-              className="pdv-select">
-              <option value="">Seleccionar PDV...</option>
-              {pdvs.map(p => (
-                <option key={p.id_pdv} value={p.id_pdv}>{p.descripcion} — {p.ciudad}</option>
-              ))}
-            </select>
+            <input
+              type="text"
+              value={esComercial
+                ? (pdvSeleccionado?.descripcion || user?.login || 'Sin PDV asignado')
+                : (user?.departmentName || 'Sin departamento')}
+              readOnly
+              className="form-input"
+              style={{ background: '#f3f4f6', cursor: 'not-allowed' }}
+            />
 
             {pdvSeleccionado && (
               <div className="pdv-info-tags">
                 <span className="pdv-tag cupo">
                   Cupo: ${Number(pdvSeleccionado.cupo).toFixed(2)}
                 </span>
+                <span className="pdv-tag info">PDV: {pdvSeleccionado.descripcion}</span>
                 <span className="pdv-tag info">{pdvSeleccionado.ciudad}</span>
-                <span className="pdv-tag info">{pdvSeleccionado.direccion}</span>
+              </div>
+            )}
+
+            {esComercial && !pdvSeleccionado && (
+              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>
+                No se encontró un PDV asignado para tu usuario.
               </div>
             )}
           </div>

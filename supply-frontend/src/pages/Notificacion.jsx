@@ -1,14 +1,16 @@
 // src/pages/Notificacion.jsx
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useSidebar } from '../context/SidebarContext'
 import Navbar from '../components/Navbar'
 import Sidebar from '../components/Sidebar'
-import './Notificacion.css'
+import '../style/Notificacion.css'
 
 export default function Notificacion() {
   const { state }  = useLocation()
   const navigate   = useNavigate()
   const { logout } = useAuth()
+  const { isCollapsed } = useSidebar()
 
   const mensaje      = state?.mensaje      || 'Su requerimiento ha sido procesado.'
   const emailEnviado = state?.emailEnviado ?? true
@@ -22,7 +24,7 @@ export default function Notificacion() {
       <Navbar />
       <Sidebar />
 
-      <main className="notif-body" style={{ marginLeft: 250 }}>
+      <main className="notif-body" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
         <div className="notif-card anim-fade-up">
 
           {/* Ícono check */}

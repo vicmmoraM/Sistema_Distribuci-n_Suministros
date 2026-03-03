@@ -4,13 +4,15 @@ const SidebarContext = createContext(null)
 
 export function SidebarProvider({ children }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   const toggle = () => setIsOpen(!isOpen)
   const close = () => setIsOpen(false)
   const open = () => setIsOpen(true)
+  const toggleCollapse = () => setIsCollapsed(!isCollapsed)
 
   return (
-    <SidebarContext.Provider value={{ isOpen, toggle, close, open }}>
+    <SidebarContext.Provider value={{ isOpen, toggle, close, open, isCollapsed, toggleCollapse }}>
       {children}
     </SidebarContext.Provider>
   )

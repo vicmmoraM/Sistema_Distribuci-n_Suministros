@@ -1,16 +1,18 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useSidebar } from '../context/SidebarContext'
+import { usePermissions } from '../hooks/usePermissions'
 
 /**
- * Sidebar de navegación responsive
+ * Sidebar de navegación responsive con filtrado por permisos
  */
 export default function Sidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const { isOpen, close } = useSidebar()
+  const { isOpen, close, isCollapsed, toggleCollapse } = useSidebar()
+  const { rutasPermitidas } = usePermissions()
 
   // ── Definición de links ────────────────────────────────────
-  const links = [
+  const allLinks = [
     {
       label: 'Pedidos',
       ruta: '/home',
@@ -58,6 +60,9 @@ export default function Sidebar() {
     },
   ]
 
+  // Filtrar links basándose en los permisos del usuario
+  const links = allLinks.filter(link => rutasPermitidas.includes(link.ruta))
+
   return (
     <>
       {/* Overlay en mobile cuando está abierto */}
@@ -79,18 +84,59 @@ export default function Sidebar() {
         position: 'fixed',
         left: 0,
         top: 80, // Altura del navbar
-        width: '250px',
+        width: isCollapsed ? '70px' : '250px',
         height: 'calc(100vh - 80px)',
         background: '#f8f9fa',
         borderRight: '1px solid #e5e7eb',
         padding: '1.5rem 0',
         overflowY: 'auto',
         zIndex: 20,
-        transition: 'transform 0.3s ease',
+        transition: 'all 0.3s ease',
         transform: 'translateX(0)',
       }}
         className="sidebar-aside"
       >
+        {/* Botón para colapsar/expandir */}
+        <button
+          onClick={toggleCollapse}
+          title={isCollapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+          className="sidebar-collapse-btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '36px',
+            height: '36px',
+            margin: isCollapsed ? '0 auto 1.5rem' : '0 0.75rem 1.5rem auto',
+            borderRadius: '0.5rem',
+            border: '1px solid #e5e7eb',
+            background: 'white',
+            color: '#6b7280',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = '#f3f4f6'
+            e.currentTarget.style.color = '#1b3a6b'
+            e.currentTarget.style.borderColor = '#1b3a6b'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'white'
+            e.currentTarget.style.color = '#6b7280'
+            e.currentTarget.style.borderColor = '#e5e7eb'
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"
+            stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}
+            style={{
+              transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.3s ease',
+            }}>
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M11 19l-7-7 7-7M4 12h16" />
+          </svg>
+        </button>
+
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingX: '0.75rem' }}>
           {links.map(link => {
             const activo = pathname === link.ruta
@@ -101,11 +147,13 @@ export default function Sidebar() {
                   navigate(link.ruta)
                   close() // Cierra el sidebar en mobile al navegar
                 }}
+                title={isCollapsed ? link.label : ''}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: isCollapsed ? 'center' : 'flex-start',
                   gap: '0.75rem',
-                  padding: '0.75rem 1rem',
+                  padding: isCollapsed ? '0.75rem' : '0.75rem 1rem',
                   marginX: '0.75rem',
                   borderRadius: '0.5rem',
                   border: 'none',
@@ -116,8 +164,9 @@ export default function Sidebar() {
                   fontWeight: activo ? 600 : 400,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
-                  borderLeft: activo ? '3px solid #1b3a6b' : '3px solid transparent',
-                  paddingLeft: activo ? 'calc(1rem - 3px)' : '1rem',
+                  borderLeft: activo && !isCollapsed ? '3px solid #1b3a6b' : '3px solid transparent',
+                  paddingLeft: activo && !isCollapsed ? 'calc(1rem - 3px)' : isCollapsed ? '0.75rem' : '1rem',
+                  position: 'relative',
                 }}
                 onMouseEnter={e => {
                   if (!activo) {
@@ -133,7 +182,7 @@ export default function Sidebar() {
                 }}
               >
                 {link.icon}
-                <span>{link.label}</span>
+                {!isCollapsed && <span>{link.label}</span>}
               </button>
             )
           })}
@@ -149,6 +198,7 @@ export default function Sidebar() {
           .sidebar-aside {
             top: 60px !important;
             height: calc(100vh - 60px) !important;
+            width: 250px !important;
             transform: ${isOpen ? 'translateX(0)' : 'translateX(-100%)'} !important;
             box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
           }
@@ -157,6 +207,10 @@ export default function Sidebar() {
             display: block !important;
             top: 60px !important;
             height: calc(100vh - 60px) !important;
+          }
+
+          .sidebar-collapse-btn {
+            display: none !important;
           }
         }
       `}</style>

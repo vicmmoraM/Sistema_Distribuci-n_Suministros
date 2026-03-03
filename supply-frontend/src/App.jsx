@@ -9,8 +9,9 @@ import Login from './pages/Login'
 import Home from './pages/Home'
 import Notificacion from './pages/Notificacion'
 import Reportes from './pages/Reportes'
+import Configuracion from './pages/Configuracion'
+import Aprobaciones from './pages/Aprobaciones'
 // Importa estas páginas cuando las tengas creadas:
-// import Aprobaciones from './pages/Aprobaciones'
 // import Catalogos from './pages/Catalogos'
 
 export default function App() {
@@ -38,22 +39,14 @@ export default function App() {
           {/* Solo Financiero, Tecnología */}
           <Route path="/aprobaciones" element={
             <ProtectedRoute requiredPerm="aprobacion">
-              <>
-                <Navbar />
-                <Sidebar />
-                <div style={{ marginLeft: 250, padding: '2rem' }}>No disponible :( </div>
-              </>
+              <Aprobaciones />
             </ProtectedRoute>
           } />
 
           {/* Solo Tecnología */}
           <Route path="/configuracion" element={
             <ProtectedRoute requiredPerm="configuracion">
-              <>
-                <Navbar />
-                <Sidebar />
-                <div style={{ marginLeft: 250, padding: '2rem' }}>No disponible :(</div>
-              </>
+              <Configuracion />
             </ProtectedRoute>
           } />
 
