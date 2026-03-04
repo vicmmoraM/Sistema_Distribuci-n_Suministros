@@ -39,9 +39,26 @@ CREATE TABLE departamentos (
     descripcion VARCHAR(100) NOT NULL
 ) ENGINE=INNODB;
 
+CREATE TABLE presupuesto_departamentos (
+    id_presupuesto_departamento INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    id_departamento INT NOT NULL,
+    monto_autorizado DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    CONSTRAINT fk_pres_depto FOREIGN KEY (id_departamento) REFERENCES departamentos (id_departamento),
+    UNIQUE KEY uq_presupuesto_depto (id_departamento)
+) ENGINE=INNODB;
+
 CREATE TABLE roles (
     id_rol INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     descripcion VARCHAR(100) NOT NULL
+) ENGINE=INNODB;
+
+CREATE TABLE rol_permisos (
+    id_rol INT NOT NULL PRIMARY KEY,
+    puede_pedidos TINYINT(1) NOT NULL DEFAULT 1,
+    puede_reportes TINYINT(1) NOT NULL DEFAULT 0,
+    puede_aprobacion TINYINT(1) NOT NULL DEFAULT 0,
+    puede_configuracion TINYINT(1) NOT NULL DEFAULT 0,
+    CONSTRAINT fk_rol_perm FOREIGN KEY (id_rol) REFERENCES roles (id_rol)
 ) ENGINE=INNODB;
 
 CREATE TABLE zonas_comerciales (
@@ -61,6 +78,7 @@ CREATE TABLE suministros (
     id_estado_suministro INT NOT NULL,
     descripcion VARCHAR(100) NOT NULL,
     stock INT NOT NULL DEFAULT 0, -- El stock es general, así que se queda aquí
+    fecha_actualizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX (descripcion),
     CONSTRAINT fk_sum_tipo FOREIGN KEY (id_tipo_suministro) REFERENCES tipo_suministros (id_tipo_suministro),
     CONSTRAINT fk_sum_estado FOREIGN KEY (id_estado_suministro) REFERENCES estado_suministros (id_estado_suministro)
@@ -71,8 +89,11 @@ CREATE TABLE usuarios (
     id_departamento INT NOT NULL,
     id_rol INT NOT NULL,
     login VARCHAR(60) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
     nombres VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
+    activo TINYINT(1) NOT NULL DEFAULT 1,
+    fecha_registro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_user_depto FOREIGN KEY (id_departamento) REFERENCES departamentos (id_departamento),
     CONSTRAINT fk_user_rol FOREIGN KEY (id_rol) REFERENCES roles (id_rol)
 ) ENGINE=INNODB;
@@ -110,7 +131,7 @@ CREATE TABLE suministros_precios (
 CREATE TABLE cabecera_pedidos (
     id_pedido INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     id_usuario INT NOT NULL,
-    id_pdv INT NOT NULL,
+    id_pdv INT NULL,
     id_estado_pedido INT NOT NULL,
     fecha_registro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_cab_user FOREIGN KEY (id_usuario) REFERENCES usuarios (id_usuario),

@@ -34,9 +34,24 @@ INSERT INTO departamentos (descripcion) VALUES ('Tecnologia');
 INSERT INTO departamentos (descripcion) VALUES ('Tesoreria');
 INSERT INTO departamentos (descripcion) VALUES ('Trade Marketing');
 
+INSERT INTO presupuesto_departamentos (id_departamento, monto_autorizado)
+SELECT
+	d.id_departamento,
+	CASE WHEN d.descripcion = 'Tecnologia' THEN 50.00 ELSE 0.00 END AS monto_autorizado
+FROM departamentos d;
+
 INSERT INTO roles (descripcion) VALUES ('Solicitador');
 INSERT INTO roles (descripcion) VALUES ('Aprobador');
 INSERT INTO roles (descripcion) VALUES ('Administrador');
+
+INSERT INTO rol_permisos (id_rol, puede_pedidos, puede_reportes, puede_aprobacion, puede_configuracion)
+SELECT
+	r.id_rol,
+	1,
+	CASE WHEN LOWER(r.descripcion) IN ('aprobador', 'administrador') THEN 1 ELSE 0 END,
+	CASE WHEN LOWER(r.descripcion) IN ('aprobador', 'administrador') THEN 1 ELSE 0 END,
+	CASE WHEN LOWER(r.descripcion) = 'administrador' THEN 1 ELSE 0 END
+FROM roles r;
 
 INSERT INTO zonas_comerciales (zona, codigo_zona) VALUES ('COSTA_CENTRO_1','COSTCENT1');
 INSERT INTO zonas_comerciales (zona, codigo_zona) VALUES ('COSTA_CENTRO_2','COSTCENT2');
@@ -190,3 +205,14 @@ INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra) VAL
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'RESMA 75G PAPEL BOND A4 REPORT/NORMA'), 2, 3.54),
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'TIJERAS 5" PUNTA REDONDA'), 1, 0.73),
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'TIJERAS 5" punta REDONDA'), 2, 0.46);
+
+-- USUARIO LOCAL DE PRUEBA
+INSERT INTO usuarios (id_departamento, id_rol, login, password, nombres, email)
+VALUES (
+	(SELECT id_departamento FROM departamentos WHERE descripcion = 'Tecnologia' LIMIT 1),
+	(SELECT id_rol FROM roles WHERE descripcion = 'Solicitador' LIMIT 1),
+	'test.local',
+	'123456',
+	'Usuario Test Local',
+	'test.local@farmcorp.com.ec'
+);
