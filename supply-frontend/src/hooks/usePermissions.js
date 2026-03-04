@@ -12,33 +12,8 @@ function normalizarString(str) {
     .replace(/[\u0300-\u036f]/g, '') // Remueve tildes
 }
 
-/**
- * Mapeo de permisos por departamento (sin tildes para match flexible)
- *
- * Secciones:
- *  - pedidos      → crear pedidos (Home)
- *  - reportes     → ver reportes
- *  - aprobacion   → panel de aprobación
- *  - configuracion    → configuración / admin
- */
-const PERMISOS_POR_DEPARTAMENTO = {
-  'administracion':  { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'auditoria':       { pedidos: true,  reportes: true,  aprobacion: false, configuracion: false },
-  'comercial':       { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'contabilidad':    { pedidos: true,  reportes: true,  aprobacion: false, configuracion: false },
-  'directorio':      { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'financiero':      { pedidos: true,  reportes: true,  aprobacion: true,  configuracion: false },
-  'mantenimiento':   { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'procesos bi':     { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'supply chain':    { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'talento humano':  { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'tecnologia':      { pedidos: true,  reportes: true,  aprobacion: true,  configuracion: true  },
-  'tesoreria':       { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-  'trade marketing': { pedidos: true,  reportes: false, aprobacion: false, configuracion: false },
-}
-
 const PERMISOS_VACIOS = {
-  pedidos: false,
+  pedidos: true,
   reportes: false,
   aprobacion: false,
   configuracion: false,
@@ -83,11 +58,10 @@ export function usePermissions() {
     ''
   )
 
-  console.log('DEBUG - User object:', user)
-  console.log('DEBUG - nombreDepto (normalizado):', nombreDepto)
-  console.log('DEBUG - Permisos disponibles:', Object.keys(PERMISOS_POR_DEPARTAMENTO))
-
-  const puede = PERMISOS_POR_DEPARTAMENTO[nombreDepto] ?? PERMISOS_VACIOS
+  const puede = {
+    ...PERMISOS_VACIOS,
+    ...(user.permissions || {}),
+  }
   const esComercial = nombreDepto === 'comercial'
 
   // Generar lista de rutas permitidas basándose en los permisos
@@ -95,9 +69,6 @@ export function usePermissions() {
     .filter(permiso => puede[permiso] === true)
     .map(permiso => RUTAS_POR_PERMISO[permiso])
     .filter(Boolean)
-
-  console.log('DEBUG - Permisos asignados:', puede)
-  console.log('DEBUG - Rutas permitidas:', rutasPermitidas)
 
   return { puede, nombreDepto, esComercial, rutasPermitidas }
 }

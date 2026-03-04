@@ -39,20 +39,24 @@ export default function Home() {
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
-    api.get('/catalogos/pdvs').then(r => {
-      setPdvs(r.data)
-      // Auto-seleccionar PDV según el usuario autenticado
-      if (user?.login) {
-        const pdvDelUsuario = r.data.find(p => 
-          p.descripcion.toLowerCase() === user.login.toLowerCase()
-        )
-        if (pdvDelUsuario) {
-          setPdv(pdvDelUsuario)
+    if (esComercial) {
+      api.get('/catalogos/pdvs').then(r => {
+        setPdvs(r.data)
+        if (user?.login) {
+          const pdvDelUsuario = r.data.find(p =>
+            p.descripcion.toLowerCase() === user.login.toLowerCase()
+          )
+          if (pdvDelUsuario) {
+            setPdv(pdvDelUsuario)
+          }
         }
-      }
-    }).catch(() => {})
+      }).catch(() => {})
+    } else {
+      setPdvs([])
+      setPdv(null)
+    }
     api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => {})
-  }, [loading, user?.login])
+  }, [loading, user?.login, esComercial])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
@@ -67,7 +71,10 @@ export default function Home() {
   const subtotalOficina  = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
   const subtotalLimpieza = carrito.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
   const totalPedido      = carrito.reduce((s, i) => s + i.total, 0)
-  const cupoExcedido     = pdvSeleccionado && totalPedido > pdvSeleccionado.cupo
+  const limiteDisponible = esComercial
+    ? Number(pdvSeleccionado?.cupo || 0)
+    : Number(user?.departmentBudget || 0)
+  const cupoExcedido = totalPedido > limiteDisponible
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
@@ -92,12 +99,22 @@ export default function Home() {
   const handleEliminar = (id) => setCarrito(prev => prev.filter(i => i.id !== id))
 
   const handlePedido = async () => {
-    if (!pdvSeleccionado || carrito.length === 0) return
-    if (cupoExcedido) { setError('El total supera el cupo asignado al PDV.'); return }
+    if (carrito.length === 0) return
+    if (esComercial && !pdvSeleccionado) return
+    if (cupoExcedido) {
+      setError(esComercial
+        ? 'El total supera el cupo asignado al PDV.'
+        : 'El total supera el presupuesto asignado al departamento.')
+      return
+    }
     setEnviando(true)
     setError('')
     try {
-      const res = await api.post('/pedidos', { pdvId: pdvSeleccionado.id_pdv, items: carrito })
+      const payload = { items: carrito }
+      if (esComercial && pdvSeleccionado) {
+        payload.pdvId = pdvSeleccionado.id_pdv
+      }
+      const res = await api.post('/pedidos', payload)
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
       setError(err.response?.data?.error || 'Error al procesar el pedido.')
@@ -127,13 +144,21 @@ export default function Home() {
               style={{ background: '#f3f4f6', cursor: 'not-allowed' }}
             />
 
-            {pdvSeleccionado && (
+            {esComercial && pdvSeleccionado && (
               <div className="pdv-info-tags">
                 <span className="pdv-tag cupo">
                   Cupo: ${Number(pdvSeleccionado.cupo).toFixed(2)}
                 </span>
                 <span className="pdv-tag info">PDV: {pdvSeleccionado.descripcion}</span>
                 <span className="pdv-tag info">{pdvSeleccionado.ciudad}</span>
+              </div>
+            )}
+
+            {!esComercial && (
+              <div className="pdv-info-tags">
+                <span className="pdv-tag cupo">
+                  Presupuesto: ${Number(user?.departmentBudget || 0).toFixed(2)}
+                </span>
               </div>
             )}
 
@@ -262,7 +287,7 @@ export default function Home() {
         <div className="submit-section">
           <button
             onClick={handlePedido}
-            disabled={enviando || carrito.length === 0 || !pdvSeleccionado || cupoExcedido}
+            disabled={enviando || carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido}
             className="submit-button">
             {enviando ? 'Enviando pedido...' : 'Realizar Pedido'}
           </button>
