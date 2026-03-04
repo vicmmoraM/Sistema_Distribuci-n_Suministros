@@ -4,8 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import { usePermissions } from '../hooks/usePermissions'
 import api from '../api/axios'
-import Navbar from '../components/Navbar'
-import Sidebar from '../components/Sidebar'
+import Layout from '../components/Layout'
 import '../style/Home.css'
 
 export default function Home() {
@@ -125,8 +124,7 @@ export default function Home() {
 
   return (
     <div className="home-container">
-      <Navbar />
-      <Sidebar />
+      <Layout />
 
       <main className="home-main" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
 
@@ -188,7 +186,7 @@ export default function Home() {
               <option value="">Suministro...</option>
               {suministros.map(s => (
                 <option key={s.id_suministro} value={s.id_suministro}>
-                  {s.descripcion} — ${Number(s.precio).toFixed(2)}
+                  {s.descripcion} — ${Number(s.precio).toFixed(2)} - {s.proveedor} 
                 </option>
               ))}
             </select>

@@ -2,8 +2,7 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
-import Navbar from '../components/Navbar'
-import Sidebar from '../components/Sidebar'
+import Layout from '../components/Layout'
 import '../style/Notificacion.css'
 
 export default function Notificacion() {
@@ -21,8 +20,7 @@ export default function Notificacion() {
   return (
     <div className="notif-page">
 
-      <Navbar />
-      <Sidebar />
+      <Layout />
 
       <main className="notif-body" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
         <div className="notif-card anim-fade-up">

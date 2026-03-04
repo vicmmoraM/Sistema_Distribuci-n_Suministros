@@ -3,7 +3,7 @@ import { createContext, useContext, useState } from 'react'
 const SidebarContext = createContext(null)
 
 export function SidebarProvider({ children }) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(true)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   const toggle = () => setIsOpen(!isOpen)

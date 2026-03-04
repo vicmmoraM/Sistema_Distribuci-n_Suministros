@@ -6,12 +6,32 @@
 .configuracion-main {
   margin-top: 0;
   padding: 1rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 1rem;
+  width: 100%;
+}
+
+.admin-layout-full {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Ajustes específicos para diferentes tamaños de sidebar en desktop */
+@media (min-width: 1101px) {
+  .admin-layout {
+    max-width: 100%;
+  }
+  
+  .admin-content {
+    min-width: 0; /* Permite que el grid comprima el contenido */
+  }
 }
 
 .admin-side-menu {
@@ -81,6 +101,8 @@
   border-radius: 0.75rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   padding: 1rem;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .admin-topbar {
@@ -114,6 +136,41 @@
   padding: 0.45rem 0.75rem;
   font-size: 0.78rem;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-refresh:hover,
+.admin-primary:hover,
+.admin-secondary:hover,
+.actions-cell button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Estilos para botones con iconos */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.icon-btn-with-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.icon-btn svg,
+.icon-btn-with-text svg {
+  flex-shrink: 0;
+}
+
+.icon-btn-with-text span {
+  white-space: nowrap;
 }
 
 .admin-primary {
@@ -129,6 +186,35 @@
 .actions-cell .danger {
   border-color: #fca5a5;
   color: #b91c1c;
+}
+
+.actions-cell .danger:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+}
+
+/* Tooltips para botones con iconos */
+.icon-btn[title]:hover::after,
+.icon-btn-with-text[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: #ffffff;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.35rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.icon-btn,
+.icon-btn-with-text {
+  position: relative;
 }
 
 .admin-loading {
@@ -201,6 +287,10 @@
   margin-bottom: 0.75rem;
 }
 
+.admin-filters-supplies {
+  grid-template-columns: 1fr 180px 180px 160px;
+}
+
 .admin-filters input,
 .admin-filters select,
 .admin-form-grid input,
@@ -236,12 +326,21 @@
   overflow: auto;
   border: 1px solid #e5e7eb;
   border-radius: 0.5rem;
+  max-width: 100%;
 }
 
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 920px;
+  min-width: 1000px;
+  table-layout: auto;
+}
+
+/* Para pantallas grandes, ajustar ancho mínimo según contenido */
+@media (min-width: 1400px) {
+  .admin-table {
+    min-width: 100%;
+  }
 }
 
 .admin-table thead {
@@ -253,14 +352,35 @@
   text-align: left;
   font-size: 0.75rem;
   font-weight: 700;
-  padding: 0.65rem;
+  padding: 0.6rem;
+  vertical-align: middle;
+  box-sizing: border-box;
 }
 
 .admin-table td {
   border-top: 1px solid #e5e7eb;
-  padding: 0.6rem;
+  padding: 0.5rem;
   font-size: 0.8rem;
   color: #374151;
+  vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Asegurar ancho suficiente para la columna de acciones */
+.admin-table td.actions-cell {
+  min-width: 130px;
+  width: 130px;
+  max-width: 130px;
+  padding: 0.4rem !important;
+}
+
+.admin-table th:last-child {
+  min-width: 130px;
+  width: 130px;
+  max-width: 130px;
+  padding: 0.6rem !important;
+  text-align: center;
 }
 
 .status-badge {
@@ -288,8 +408,16 @@
 
 .actions-cell {
   display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  white-space: nowrap;
+  padding: 0.4rem !important;
+}
+
+.actions-cell .icon-btn {
+  flex: 0 0 auto;
 }
 
 .admin-modal-overlay {
@@ -350,13 +478,23 @@
   background: #b91c1c;
 }
 
+/* Tablet y pantallas medianas */
 @media (max-width: 1100px) {
+  .configuracion-main {
+    padding: 0.75rem;
+  }
+
   .admin-layout {
     grid-template-columns: 1fr;
+    max-width: 100%;
   }
 
   .admin-side-menu {
     position: static;
+  }
+
+  .admin-filters-supplies {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
@@ -365,11 +503,265 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .admin-filters {
+  .admin-filters,
+  .admin-filters-supplies {
     grid-template-columns: 1fr;
   }
 
   .admin-form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Móviles y pantallas pequeñas */
+@media (max-width: 768px) {
+  .configuracion-main {
+    padding: 0.5rem;
+    margin-left: 0 !important;
+    max-width: 100%;
+  }
+
+  .admin-layout,
+  .admin-layout-full {
+    gap: 0.5rem;
+    max-width: 100%;
+  }
+
+  .admin-content {
+    padding: 0.75rem;
+  }
+
+  .admin-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .admin-topbar h1 {
+    font-size: 1rem;
+  }
+
+  .admin-topbar p {
+    font-size: 0.75rem;
+  }
+
+  .admin-refresh,
+  .admin-primary {
+    width: 100%;
+  }
+
+  .admin-dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .admin-stat-card {
+    padding: 0.75rem;
+  }
+
+  .admin-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .admin-panel-header .admin-primary {
+    width: 100%;
+  }
+
+  /* Tabla responsive - convertir a cards en móvil */
+  .admin-table-wrap {
+    border: none;
+  }
+
+  .admin-table {
+    min-width: 0;
+    display: block;
+  }
+
+  .admin-table thead {
+    display: none;
+  }
+
+  .admin-table tbody {
+    display: block;
+  }
+
+  .admin-table tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    padding: 0.75rem;
+  }
+
+  .admin-table td {
+    display: block;
+    border: none;
+    padding: 0.4rem 0;
+    text-align: left;
+  }
+
+  .admin-table td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: #1f2937;
+    display: inline-block;
+    margin-right: 0.5rem;
+    min-width: 100px;
+  }
+
+  /* Especial para celdas con solo checkbox */
+  .admin-table td input[type="checkbox"] {
+    margin-left: 0;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  /* Low stock styling para móvil */
+  .low-stock {
+    display: inline-block;
+    background: #fef3c7;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.3rem;
+  }
+
+  .actions-cell {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .actions-cell::before {
+    display: none;
+  }
+
+  .actions-cell button {
+    width: 100%;
+    padding: 0.6rem;
+  }
+
+  .actions-cell .icon-btn {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  /* Mostrar tooltips como texto en móvil */
+  .actions-cell .icon-btn::after {
+    content: attr(title);
+    font-size: 0.8rem;
+  }
+
+  .actions-cell .icon-btn[title]:hover::after {
+    position: static;
+    transform: none;
+    background: transparent;
+    color: currentColor;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* Botones con iconos en móvil */
+  .icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .icon-btn-with-text {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .icon-btn svg,
+  .icon-btn-with-text svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .status-badge {
+    display: inline-block;
+    margin-left: 0;
+  }
+
+  /* Sidebar colapsado en móvil */
+  .admin-side-menu {
+    border-radius: 0.5rem;
+  }
+
+  .admin-nav-list {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  /* Stock pill responsive */
+  .stock-pill {
+    padding: 0.5rem;
+    text-align: center;
+  }
+
+  /* Modal responsive */
+  .admin-modal {
+    width: calc(100vw - 2rem);
+    margin: 1rem;
+  }
+
+  /* Toast responsive */
+  .admin-toast {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+  }
+}
+
+/* Pantallas muy pequeñas */
+@media (max-width: 480px) {
+  .configuracion-main {
+    padding: 0.25rem;
+  }
+
+  .admin-content {
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+  }
+
+  .admin-topbar h1 {
+    font-size: 0.9rem;
+  }
+
+  .admin-panel-header h2 {
+    font-size: 0.85rem;
+  }
+
+  .admin-filters input,
+  .admin-filters select {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .admin-table td {
+    font-size: 0.75rem;
+    padding: 0.3rem 0;
+  }
+
+  .admin-table td::before {
+    min-width: 80px;
+    font-size: 0.7rem;
+  }
+
+  .admin-stat-card h3 {
+    font-size: 0.7rem;
+  }
+
+  .admin-stat-card p {
+    font-size: 1.1rem;
   }
 }

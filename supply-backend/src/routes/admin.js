@@ -43,8 +43,11 @@ router.get('/meta', async (req, res) => {
     const [estadosSuministro] = await pool.query(
       'SELECT id_estado_suministro, descripcion FROM estado_suministros ORDER BY descripcion ASC'
     )
+    const [proveedores] = await pool.query(
+      'SELECT id_proveedor, nombre_proveedor FROM proveedores ORDER BY nombre_proveedor ASC'
+    )
 
-    return res.json({ departamentos, roles, categorias, estadosSuministro })
+    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores })
   } catch (err) {
     console.error('Error cargando metadatos admin:', err.message)
     return res.status(500).json({ error: 'Error al cargar metadatos administrativos.' })
@@ -140,26 +143,30 @@ router.post('/users', async (req, res) => {
 
 router.put('/users/:id', async (req, res) => {
   const userId = Number(req.params.id)
-  const { nombres, email, id_rol, id_departamento, password } = req.body
+  const { nombres, email, id_rol, id_departamento, password, activo } = req.body
 
-  if (!nombres || !email || !id_rol || !id_departamento) {
-    return res.status(400).json({ error: 'Nombres, email, rol y departamento son obligatorios.' })
+  // Para crear: se requieren todos los campos
+  // Para editar: solo se requieren rol, departamento y activo
+  if (!id_rol || !id_departamento) {
+    return res.status(400).json({ error: 'Rol y departamento son obligatorios.' })
   }
 
   try {
-    if (password) {
+    // Si tiene email y password, es una creación o actualización completa
+    if (email && password) {
       await pool.query(
         `UPDATE usuarios
-         SET nombres = ?, email = ?, id_rol = ?, id_departamento = ?, password = ?
+         SET nombres = ?, email = ?, id_rol = ?, id_departamento = ?, password = ?, activo = ?
          WHERE id_usuario = ?`,
-        [nombres, email, id_rol, id_departamento, password, userId]
+        [nombres, email, id_rol, id_departamento, password, activo ? 1 : 0, userId]
       )
     } else {
+      // Edición simple: solo rol, departamento y estado activo
       await pool.query(
         `UPDATE usuarios
-         SET nombres = ?, email = ?, id_rol = ?, id_departamento = ?
+         SET id_rol = ?, id_departamento = ?, activo = ?
          WHERE id_usuario = ?`,
-        [nombres, email, id_rol, id_departamento, userId]
+        [id_rol, id_departamento, activo ? 1 : 0, userId]
       )
     }
 
@@ -200,20 +207,25 @@ router.delete('/users/:id', async (req, res) => {
 })
 
 router.get('/supplies', async (req, res) => {
-  const { search = '', category = '' } = req.query
+  const { search = '', category = '', provider = '' } = req.query
 
   try {
     const params = []
     const conditions = []
 
     if (search) {
-      conditions.push('s.descripcion LIKE ?')
-      params.push(`%${search}%`)
+      conditions.push('(s.descripcion LIKE ? OR pr.nombre_proveedor LIKE ?)')
+      params.push(`%${search}%`, `%${search}%`)
     }
 
     if (category) {
       conditions.push('s.id_tipo_suministro = ?')
       params.push(Number(category))
+    }
+
+    if (provider) {
+      conditions.push('sp.id_proveedor = ?')
+      params.push(Number(provider))
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
@@ -227,12 +239,18 @@ router.get('/supplies', async (req, res) => {
         s.stock,
         s.id_estado_suministro,
         es.descripcion AS estado,
+        sp.id_suministro_precio,
+        sp.id_proveedor,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
+        sp.precio_compra,
         DATE_FORMAT(s.fecha_actualizacion, '%Y-%m-%d %H:%i:%s') AS fecha_actualizacion
       FROM suministros s
       INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
       INNER JOIN estado_suministros es ON es.id_estado_suministro = s.id_estado_suministro
+      LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
+      LEFT JOIN proveedores pr ON pr.id_proveedor = sp.id_proveedor
       ${whereClause}
-      ORDER BY s.fecha_actualizacion DESC, s.descripcion ASC`,
+      ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, sp.id_suministro_precio ASC`,
       params
     )
 
@@ -244,10 +262,25 @@ router.get('/supplies', async (req, res) => {
 })
 
 router.post('/supplies', async (req, res) => {
-  const { descripcion, id_tipo_suministro, stock = 0, id_estado_suministro = 1 } = req.body
+  const {
+    descripcion,
+    id_tipo_suministro,
+    stock = 0,
+    id_estado_suministro = 1,
+    id_proveedor,
+    precio_compra,
+  } = req.body
 
   if (!descripcion || !id_tipo_suministro) {
     return res.status(400).json({ error: 'Descripción y categoría son obligatorios.' })
+  }
+
+  if ((id_proveedor && precio_compra === undefined) || (!id_proveedor && precio_compra !== undefined)) {
+    return res.status(400).json({ error: 'Debes enviar proveedor y precio juntos.' })
+  }
+
+  if (precio_compra !== undefined && Number(precio_compra) < 0) {
+    return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
   try {
@@ -256,6 +289,17 @@ router.post('/supplies', async (req, res) => {
        VALUES (?, ?, ?, ?)`,
       [descripcion, id_tipo_suministro, Number(stock), id_estado_suministro]
     )
+
+    if (id_proveedor && precio_compra !== undefined) {
+      await pool.query(
+        `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           precio_compra = VALUES(precio_compra),
+           ultima_actualizacion = CURRENT_TIMESTAMP`,
+        [result.insertId, Number(id_proveedor), Number(precio_compra)]
+      )
+    }
 
     return res.status(201).json({ id_suministro: result.insertId, message: 'Suministro creado correctamente.' })
   } catch (err) {
@@ -266,10 +310,26 @@ router.post('/supplies', async (req, res) => {
 
 router.put('/supplies/:id', async (req, res) => {
   const supplyId = Number(req.params.id)
-  const { descripcion, id_tipo_suministro, stock, id_estado_suministro } = req.body
+  const {
+    descripcion,
+    id_tipo_suministro,
+    stock,
+    id_estado_suministro,
+    id_suministro_precio,
+    id_proveedor,
+    precio_compra,
+  } = req.body
 
   if (!descripcion || !id_tipo_suministro || stock === undefined || !id_estado_suministro) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' })
+  }
+
+  if (!id_proveedor || precio_compra === undefined) {
+    return res.status(400).json({ error: 'Proveedor y precio son obligatorios para editar suministro.' })
+  }
+
+  if (Number(precio_compra) < 0) {
+    return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
   try {
@@ -280,6 +340,54 @@ router.put('/supplies/:id', async (req, res) => {
       [descripcion, id_tipo_suministro, Number(stock), id_estado_suministro, supplyId]
     )
 
+    if (id_suministro_precio) {
+      const [rows] = await pool.query(
+        `SELECT id_suministro_precio, id_suministro, id_proveedor
+         FROM suministros_precios
+         WHERE id_suministro_precio = ? AND id_suministro = ?
+         LIMIT 1`,
+        [Number(id_suministro_precio), supplyId]
+      )
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'No se encontró el registro de proveedor/precio del suministro.' })
+      }
+
+      const current = rows[0]
+
+      if (Number(current.id_proveedor) === Number(id_proveedor)) {
+        await pool.query(
+          `UPDATE suministros_precios
+           SET precio_compra = ?, ultima_actualizacion = CURRENT_TIMESTAMP
+           WHERE id_suministro_precio = ?`,
+          [Number(precio_compra), Number(id_suministro_precio)]
+        )
+      } else {
+        await pool.query(
+          `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             precio_compra = VALUES(precio_compra),
+             ultima_actualizacion = CURRENT_TIMESTAMP`,
+          [supplyId, Number(id_proveedor), Number(precio_compra)]
+        )
+
+        await pool.query(
+          'DELETE FROM suministros_precios WHERE id_suministro_precio = ?',
+          [Number(id_suministro_precio)]
+        )
+      }
+    } else {
+      await pool.query(
+        `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           precio_compra = VALUES(precio_compra),
+           ultima_actualizacion = CURRENT_TIMESTAMP`,
+        [supplyId, Number(id_proveedor), Number(precio_compra)]
+      )
+    }
+
     return res.json({ message: 'Suministro actualizado correctamente.' })
   } catch (err) {
     console.error('Error actualizando suministro:', err.message)
@@ -287,28 +395,16 @@ router.put('/supplies/:id', async (req, res) => {
   }
 })
 
-router.patch('/supplies/:id/stock', async (req, res) => {
-  const supplyId = Number(req.params.id)
-  const { stock } = req.body
-
-  if (stock === undefined || Number(stock) < 0) {
-    return res.status(400).json({ error: 'Stock inválido.' })
-  }
-
-  try {
-    await pool.query('UPDATE suministros SET stock = ? WHERE id_suministro = ?', [Number(stock), supplyId])
-    return res.json({ message: 'Stock actualizado correctamente.' })
-  } catch (err) {
-    console.error('Error actualizando stock:', err.message)
-    return res.status(500).json({ error: 'Error al actualizar stock.' })
-  }
-})
-
 router.delete('/supplies/:id', async (req, res) => {
   const supplyId = Number(req.params.id)
 
   try {
+    // Primero eliminar los precios asociados
+    await pool.query('DELETE FROM suministros_precios WHERE id_suministro = ?', [supplyId])
+    
+    // Luego eliminar el suministro
     await pool.query('DELETE FROM suministros WHERE id_suministro = ?', [supplyId])
+    
     return res.json({ message: 'Suministro eliminado correctamente.' })
   } catch (err) {
     console.error('Error eliminando suministro:', err.message)

@@ -3,8 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import api from '../api/axios'
-import Navbar from '../components/Navbar'
-import Sidebar from '../components/Sidebar'
+import Layout from '../components/Layout'
 import '../style/Reportes.css'
 
 const MESES = [
@@ -44,6 +43,7 @@ function agruparPorPedido(rows) {
         fecha:         row.fecha,
         usuarioLogin:  row.usuarioLogin,
         usuarioNombre: row.usuarioNombre,
+        departamento:  row.departamento,
         pdvNombre:     row.pdvNombre,
         estado:        row.estado,
         items:         [],
@@ -160,11 +160,9 @@ export default function Reportes() {
 
   const totalGeneral = pedidos.reduce((s, p) => s + p.totalPedido, 0)
   const anios = Array.from({ length: 5 }, (_, i) => anioActual - i)
-
   return (
     <>
-      <Navbar />
-      <Sidebar />
+      <Layout />
 
       <div className="rep-wrapper" style={{ marginLeft: isCollapsed ? 70 : 250 }}>
 
@@ -305,7 +303,7 @@ export default function Reportes() {
                   <th>#</th>
                   <th>Fecha</th>
                   <th>Usuario</th>
-                  <th>PDV Destino</th>
+                  <th>Departamento</th>
                   <th>Estado</th>
                   <th>Tipo Suministro</th>
                   <th>Suministro</th>
@@ -339,8 +337,8 @@ export default function Reportes() {
                               <span className="rep-usuario__login">{pedido.usuarioLogin}</span>
                             </div>
                           </td>
-                          <td className="rep-td--pdv" rowSpan={pedido.items.length}>
-                            {pedido.pdvNombre}
+                          <td className="rep-td--departamento" rowSpan={pedido.items.length}>
+                            {pedido.departamento}
                           </td>
                           <td rowSpan={pedido.items.length}>
                             <span className={`rep-badge ${ESTADO_BADGE[pedido.estado] || 'badge--default'}`}>

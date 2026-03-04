@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import api from '../api/axios'
-import Navbar from '../components/Navbar'
-import Sidebar from '../components/Sidebar'
+import Layout from '../components/Layout'
 import '../style/Configuracion.css'
 
 const NAV_ITEMS = [
@@ -20,6 +20,7 @@ const EMPTY_USER_FORM = {
   id_rol: '',
   id_departamento: '',
   password: '',
+  activo: true,
 }
 
 const EMPTY_SUPPLY_FORM = {
@@ -27,19 +28,99 @@ const EMPTY_SUPPLY_FORM = {
   id_tipo_suministro: '',
   stock: 0,
   id_estado_suministro: 1,
+  id_suministro_precio: '',
+  id_proveedor: '',
+  precio_compra: '',
 }
+
+// Iconos SVG
+const EditIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </svg>
+)
+
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+    <line x1="10" y1="11" x2="10" y2="17"/>
+    <line x1="14" y1="11" x2="14" y2="17"/>
+  </svg>
+)
+
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+)
+
+
+const XIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+)
+
+const RefreshIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 4 23 10 17 10"/>
+    <polyline points="1 20 1 14 7 14"/>
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+  </svg>
+)
+
+const PlusIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/>
+    <line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+)
+
+const ToggleOnIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="5" width="22" height="14" rx="7" ry="7"/>
+    <circle cx="16" cy="12" r="3"/>
+  </svg>
+)
+
+const ToggleOffIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="5" width="22" height="14" rx="7" ry="7"/>
+    <circle cx="8" cy="12" r="3"/>
+  </svg>
+)
+
+const SaveIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+    <polyline points="17 21 17 13 7 13 7 21"/>
+    <polyline points="7 3 7 8 15 8"/>
+  </svg>
+)
 
 export default function Configuracion() {
   const { user } = useAuth()
   const { isCollapsed } = useSidebar()
+  const location = useLocation()
 
-  const [activeSection, setActiveSection] = useState('dashboard')
+  // Leer sección activa desde el hash de la URL
+  const hash = location.hash.replace('#', '')
+  const activeSection = hash || 'dashboard'
   const [navOpen, setNavOpen] = useState(true)
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
 
   const [overview, setOverview] = useState(null)
-  const [meta, setMeta] = useState({ departamentos: [], roles: [], categorias: [], estadosSuministro: [] })
+  const [meta, setMeta] = useState({
+    departamentos: [],
+    roles: [],
+    categorias: [],
+    estadosSuministro: [],
+    proveedores: [],
+  })
 
   const [users, setUsers] = useState([])
   const [userFilters, setUserFilters] = useState({ search: '', role: '', status: '' })
@@ -49,7 +130,7 @@ export default function Configuracion() {
   const [editingUserId, setEditingUserId] = useState(null)
 
   const [supplies, setSupplies] = useState([])
-  const [supplyFilters, setSupplyFilters] = useState({ search: '', category: '' })
+  const [supplyFilters, setSupplyFilters] = useState({ search: '', category: '', provider: '' })
   const [supplyModalOpen, setSupplyModalOpen] = useState(false)
   const [supplyModalMode, setSupplyModalMode] = useState('create')
   const [supplyForm, setSupplyForm] = useState(EMPTY_SUPPLY_FORM)
@@ -85,6 +166,7 @@ export default function Configuracion() {
     const params = {}
     if (supplyFilters.search) params.search = supplyFilters.search
     if (supplyFilters.category) params.category = supplyFilters.category
+    if (supplyFilters.provider) params.provider = supplyFilters.provider
     const res = await api.get('/admin/supplies', { params })
     setSupplies(res.data)
   }
@@ -115,7 +197,7 @@ export default function Configuracion() {
 
   useEffect(() => {
     if (!loading) loadSupplies()
-  }, [supplyFilters.search, supplyFilters.category])
+  }, [supplyFilters.search, supplyFilters.category, supplyFilters.provider])
 
   const lowStockCount = useMemo(() => supplies.filter(s => Number(s.stock) <= 10).length, [supplies])
 
@@ -136,6 +218,7 @@ export default function Configuracion() {
       id_rol: selectedUser.id_rol,
       id_departamento: selectedUser.id_departamento || '',
       password: '',
+      activo: Boolean(selectedUser.activo),
     })
     setUserModalOpen(true)
   }
@@ -196,6 +279,9 @@ export default function Configuracion() {
       id_tipo_suministro: selectedSupply.id_tipo_suministro,
       stock: selectedSupply.stock,
       id_estado_suministro: selectedSupply.id_estado_suministro,
+      id_suministro_precio: selectedSupply.id_suministro_precio || '',
+      id_proveedor: selectedSupply.id_proveedor || '',
+      precio_compra: selectedSupply.precio_compra ?? '',
     })
     setSupplyModalOpen(true)
   }
@@ -215,19 +301,6 @@ export default function Configuracion() {
       await Promise.all([loadSupplies(), loadOverview()])
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudo guardar el suministro.', 'error')
-    }
-  }
-
-  const updateStock = async (selectedSupply) => {
-    const newStock = window.prompt(`Nuevo stock para ${selectedSupply.descripcion}:`, String(selectedSupply.stock))
-    if (newStock === null) return
-
-    try {
-      await api.patch(`/admin/supplies/${selectedSupply.id_suministro}/stock`, { stock: Number(newStock) })
-      showToast('Stock actualizado correctamente.')
-      await Promise.all([loadSupplies(), loadOverview()])
-    } catch (err) {
-      showToast(err.response?.data?.error || 'No se pudo actualizar el stock.', 'error')
     }
   }
 
@@ -267,51 +340,24 @@ export default function Configuracion() {
 
   return (
     <div className="configuracion-container">
-      <Navbar />
-      <Sidebar />
+      <Layout />
 
       <main
         className="configuracion-main"
         style={{
           marginLeft: isCollapsed ? '70px' : '250px',
-          transition: 'margin-left 0.3s ease',
+          maxWidth: isCollapsed ? 'calc(100vw - 70px)' : 'calc(100vw - 250px)',
+          transition: 'margin-left 0.3s ease, max-width 0.3s ease',
         }}
       >
-        <div className="admin-layout">
-          <aside className="admin-side-menu">
-            <div className="admin-side-header" onClick={() => setNavOpen((prev) => !prev)}>
-              <h2>Panel Administrativo</h2>
-              <span>{navOpen ? '▾' : '▸'}</span>
-            </div>
-
-            {navOpen && (
-              <div className="admin-nav-list">
-                {NAV_ITEMS.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={`admin-nav-item ${activeSection === item.key ? 'active' : ''}`}
-                    onClick={() => setActiveSection(item.key)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="admin-side-footer">
-              <p><strong>Administrador:</strong> {user?.nombre || user?.login}</p>
-              <p><strong>Área:</strong> {user?.departmentName}</p>
-            </div>
-          </aside>
-
+        <div className="admin-layout-full">
           <section className="admin-content">
             <header className="admin-topbar">
               <div>
                 <h1>Configuración del Sistema</h1>
                 <p>Gestión centralizada de usuarios, suministros y permisos.</p>
               </div>
-              <button type="button" className="admin-refresh" onClick={loadAll}>Actualizar</button>
+              <button type="button" className="admin-refresh icon-btn" onClick={loadAll} title="Actualizar"><RefreshIcon /></button>
             </header>
 
             {loading ? (
@@ -343,7 +389,6 @@ export default function Configuracion() {
                   <div className="admin-panel-card">
                     <div className="admin-panel-header">
                       <h2>Gestión de Usuarios</h2>
-                      <button type="button" className="admin-primary" onClick={openCreateUser}>+ Nuevo Usuario</button>
                     </div>
 
                     <div className="admin-filters">
@@ -387,21 +432,18 @@ export default function Configuracion() {
                         <tbody>
                           {users.map((item) => (
                             <tr key={item.id_usuario}>
-                              <td>{item.nombres}</td>
-                              <td>{item.email}</td>
-                              <td>{item.rol}</td>
-                              <td>
+                              <td data-label="Nombre">{item.nombres}</td>
+                              <td data-label="Email">{item.email}</td>
+                              <td data-label="Rol">{item.rol}</td>
+                              <td data-label="Estado">
                                 <span className={`status-badge ${item.activo ? 'active' : 'inactive'}`}>
                                   {item.activo ? 'Activo' : 'Inactivo'}
                                 </span>
                               </td>
-                              <td>{item.fecha_registro}</td>
-                              <td className="actions-cell">
-                                <button type="button" onClick={() => openEditUser(item)}>Editar</button>
-                                <button type="button" onClick={() => toggleUserStatus(item)}>
-                                  {item.activo ? 'Desactivar' : 'Activar'}
-                                </button>
-                                <button type="button" className="danger" onClick={() => deleteUser(item)}>Eliminar</button>
+                              <td data-label="Fecha">{item.fecha_registro}</td>
+                              <td data-label="Acciones" className="actions-cell">
+                                <button type="button" className="icon-btn" onClick={() => openEditUser(item)} title="Editar"><EditIcon /></button>
+                                <button type="button" className="danger icon-btn" onClick={() => deleteUser(item)} title="Eliminar"><TrashIcon /></button>
                               </td>
                             </tr>
                           ))}
@@ -415,10 +457,10 @@ export default function Configuracion() {
                   <div className="admin-panel-card">
                     <div className="admin-panel-header">
                       <h2>Gestión de Suministros</h2>
-                      <button type="button" className="admin-primary" onClick={openCreateSupply}>+ Nuevo Suministro</button>
+                      <button type="button" className="admin-primary icon-btn-with-text" onClick={openCreateSupply} title="Nuevo Suministro"><PlusIcon /> <span>Nuevo Suministro</span></button>
                     </div>
 
-                    <div className="admin-filters">
+                    <div className="admin-filters admin-filters-supplies">
                       <input
                         type="text"
                         placeholder="Buscar suministro..."
@@ -436,6 +478,17 @@ export default function Configuracion() {
                           </option>
                         ))}
                       </select>
+                      <select
+                        value={supplyFilters.provider}
+                        onChange={(event) => setSupplyFilters((prev) => ({ ...prev, provider: event.target.value }))}
+                      >
+                        <option value="">Todos los proveedores</option>
+                        {meta.proveedores.map((provider) => (
+                          <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                            {provider.nombre_proveedor}
+                          </option>
+                        ))}
+                      </select>
                       <div className="stock-pill">Stock bajo: {lowStockCount}</div>
                     </div>
 
@@ -445,6 +498,8 @@ export default function Configuracion() {
                           <tr>
                             <th>Nombre</th>
                             <th>Categoría</th>
+                            <th>Proveedor</th>
+                            <th>Precio</th>
                             <th>Stock</th>
                             <th>Estado</th>
                             <th>Fecha de actualización</th>
@@ -453,20 +508,21 @@ export default function Configuracion() {
                         </thead>
                         <tbody>
                           {supplies.map((item) => (
-                            <tr key={item.id_suministro}>
-                              <td>{item.descripcion}</td>
-                              <td>{item.categoria}</td>
-                              <td>
+                            <tr key={`${item.id_suministro}-${item.id_suministro_precio || item.id_proveedor || 'sin-proveedor'}`}>
+                              <td data-label="Nombre">{item.descripcion}</td>
+                              <td data-label="Categoría">{item.categoria}</td>
+                              <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
+                              <td data-label="Precio">{item.precio_compra !== null && item.precio_compra !== undefined ? Number(item.precio_compra).toFixed(2) : '-'}</td>
+                              <td data-label="Stock">
                                 <span className={Number(item.stock) <= 10 ? 'low-stock' : ''}>
                                   {item.stock}
                                 </span>
                               </td>
-                              <td>{item.estado}</td>
-                              <td>{item.fecha_actualizacion}</td>
-                              <td className="actions-cell">
-                                <button type="button" onClick={() => openEditSupply(item)}>Editar</button>
-                                <button type="button" onClick={() => updateStock(item)}>Actualizar Stock</button>
-                                <button type="button" className="danger" onClick={() => deleteSupply(item)}>Eliminar</button>
+                              <td data-label="Estado">{item.estado}</td>
+                              <td data-label="Actualización">{item.fecha_actualizacion}</td>
+                              <td data-label="Acciones" className="actions-cell">
+                                <button type="button" className="icon-btn" onClick={() => openEditSupply(item)} title="Editar"><EditIcon /></button>
+                                <button type="button" className="danger icon-btn" onClick={() => deleteSupply(item)} title="Eliminar"><TrashIcon /></button>
                               </td>
                             </tr>
                           ))}
@@ -498,14 +554,14 @@ export default function Configuracion() {
                         <tbody>
                           {roles.map((role) => (
                             <tr key={role.id_rol}>
-                              <td>{role.descripcion}</td>
-                              <td>{role.total_usuarios}</td>
-                              <td><input type="checkbox" checked={Boolean(role.puede_pedidos)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_pedidos', e.target.checked)} /></td>
-                              <td><input type="checkbox" checked={Boolean(role.puede_reportes)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_reportes', e.target.checked)} /></td>
-                              <td><input type="checkbox" checked={Boolean(role.puede_aprobacion)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_aprobacion', e.target.checked)} /></td>
-                              <td><input type="checkbox" checked={Boolean(role.puede_configuracion)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_configuracion', e.target.checked)} /></td>
-                              <td className="actions-cell">
-                                <button type="button" onClick={() => saveRolePermissions(role)}>Guardar</button>
+                              <td data-label="Rol">{role.descripcion}</td>
+                              <td data-label="Usuarios">{role.total_usuarios}</td>
+                              <td data-label="Pedidos"><input type="checkbox" checked={Boolean(role.puede_pedidos)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_pedidos', e.target.checked)} /></td>
+                              <td data-label="Reportes"><input type="checkbox" checked={Boolean(role.puede_reportes)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_reportes', e.target.checked)} /></td>
+                              <td data-label="Aprobación"><input type="checkbox" checked={Boolean(role.puede_aprobacion)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_aprobacion', e.target.checked)} /></td>
+                              <td data-label="Configuración"><input type="checkbox" checked={Boolean(role.puede_configuracion)} onChange={(e) => changeRolePermission(role.id_rol, 'puede_configuracion', e.target.checked)} /></td>
+                              <td data-label="Acciones" className="actions-cell">
+                                <button type="button" className="icon-btn" onClick={() => saveRolePermissions(role)} title="Guardar"><SaveIcon /></button>
                               </td>
                             </tr>
                           ))}
@@ -525,9 +581,14 @@ export default function Configuracion() {
           <div className="admin-modal">
             <h3>{userModalMode === 'create' ? 'Crear Usuario' : 'Editar Usuario'}</h3>
             <form onSubmit={submitUser} className="admin-form-grid">
-              <input type="text" placeholder="Nombre completo" value={userForm.nombres} onChange={(e) => setUserForm((prev) => ({ ...prev, nombres: e.target.value }))} required />
-              <input type="text" placeholder="Login" value={userForm.login} onChange={(e) => setUserForm((prev) => ({ ...prev, login: e.target.value }))} required disabled={userModalMode === 'edit'} />
-              <input type="email" placeholder="Email" value={userForm.email} onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))} required />
+              {userModalMode === 'create' && (
+                <>
+                  <input type="text" placeholder="Nombre completo" value={userForm.nombres} onChange={(e) => setUserForm((prev) => ({ ...prev, nombres: e.target.value }))} required />
+                  <input type="text" placeholder="Login" value={userForm.login} onChange={(e) => setUserForm((prev) => ({ ...prev, login: e.target.value }))} required />
+                  <input type="email" placeholder="Email" value={userForm.email} onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))} required />
+                  <input type="password" placeholder="Contraseña" value={userForm.password} onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))} required />
+                </>
+              )}
               <select value={userForm.id_rol} onChange={(e) => setUserForm((prev) => ({ ...prev, id_rol: e.target.value }))} required>
                 <option value="">Rol...</option>
                 {meta.roles.map((role) => <option key={role.id_rol} value={role.id_rol}>{role.descripcion}</option>)}
@@ -536,10 +597,15 @@ export default function Configuracion() {
                 <option value="">Departamento...</option>
                 {meta.departamentos.map((department) => <option key={department.id_departamento} value={department.id_departamento}>{department.descripcion}</option>)}
               </select>
-              <input type="password" placeholder={userModalMode === 'create' ? 'Contraseña' : 'Nueva contraseña (opcional)'} value={userForm.password} onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))} required={userModalMode === 'create'} />
+              {userModalMode === 'edit' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', gridColumn: '1 / -1' }}>
+                  <input type="checkbox" checked={userForm.activo} onChange={(e) => setUserForm((prev) => ({ ...prev, activo: e.target.checked }))} />
+                  <span>Usuario activo</span>
+                </label>
+              )}
               <div className="admin-modal-actions">
-                <button type="button" className="admin-secondary" onClick={() => setUserModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="admin-primary">Guardar</button>
+                <button type="button" className="admin-secondary icon-btn-with-text" onClick={() => setUserModalOpen(false)}><XIcon /> <span>Cancelar</span></button>
+                <button type="submit" className="admin-primary icon-btn-with-text"><CheckIcon /> <span>Guardar</span></button>
               </div>
             </form>
           </div>
@@ -556,13 +622,18 @@ export default function Configuracion() {
                 <option value="">Categoría...</option>
                 {meta.categorias.map((category) => <option key={category.id_tipo_suministro} value={category.id_tipo_suministro}>{category.descripcion}</option>)}
               </select>
+              <select value={supplyForm.id_proveedor} onChange={(e) => setSupplyForm((prev) => ({ ...prev, id_proveedor: e.target.value }))} required>
+                <option value="">Proveedor...</option>
+                {meta.proveedores.map((provider) => <option key={provider.id_proveedor} value={provider.id_proveedor}>{provider.nombre_proveedor}</option>)}
+              </select>
+              <input type="number" min="0" step="0.01" placeholder="Precio" value={supplyForm.precio_compra} onChange={(e) => setSupplyForm((prev) => ({ ...prev, precio_compra: e.target.value }))} required />
               <input type="number" min="0" placeholder="Stock" value={supplyForm.stock} onChange={(e) => setSupplyForm((prev) => ({ ...prev, stock: e.target.value }))} required />
               <select value={supplyForm.id_estado_suministro} onChange={(e) => setSupplyForm((prev) => ({ ...prev, id_estado_suministro: e.target.value }))} required>
                 {meta.estadosSuministro.map((state) => <option key={state.id_estado_suministro} value={state.id_estado_suministro}>{state.descripcion}</option>)}
               </select>
               <div className="admin-modal-actions">
-                <button type="button" className="admin-secondary" onClick={() => setSupplyModalOpen(false)}>Cancelar</button>
-                <button type="submit" className="admin-primary">Guardar</button>
+                <button type="button" className="admin-secondary icon-btn-with-text" onClick={() => setSupplyModalOpen(false)}><XIcon /> <span>Cancelar</span></button>
+                <button type="submit" className="admin-primary icon-btn-with-text"><CheckIcon /> <span>Guardar</span></button>
               </div>
             </form>
           </div>

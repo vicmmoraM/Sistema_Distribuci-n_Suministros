@@ -1,8 +1,7 @@
 // src/pages/Aprobaciones.jsx
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
-import Navbar from '../components/Navbar'
-import Sidebar from '../components/Sidebar'
+import Layout from '../components/Layout'
 import '../style/Aprobaciones.css'
 
 /**
@@ -15,8 +14,7 @@ export default function Aprobaciones() {
 
   return (
     <div className="aprobaciones-container">
-      <Navbar />
-      <Sidebar />
+      <Layout />
       <main 
         className="aprobaciones-main"
         style={{

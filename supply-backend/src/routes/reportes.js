@@ -73,6 +73,7 @@ const BASE_SELECT = `
     DATE_FORMAT(cp.fecha_registro, "%Y-%m-%d") AS fecha,
     u.login                           AS usuarioLogin,
     u.nombres                         AS usuarioNombre,
+    COALESCE(d.descripcion, 'Sin departamento') AS departamento,
     COALESCE(p.descripcion, 'N/A')    AS pdvNombre,
     COALESCE(zc.codigo_zona, '') AS codigoZona,
     e.descripcion                     AS estado,
@@ -84,6 +85,7 @@ const BASE_SELECT = `
     (dp.cantidad * dp.precio_unitario) AS subtotal
   FROM cabecera_pedidos cp
   INNER JOIN usuarios u          ON cp.id_usuario       = u.id_usuario
+  LEFT JOIN departamentos d      ON u.id_departamento   = d.id_departamento
   LEFT JOIN pdvs p               ON cp.id_pdv           = p.id_pdv
   LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
   INNER JOIN estado_pedidos e    ON cp.id_estado_pedido = e.id_estado_pedido
@@ -236,7 +238,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       { header: 'Pedido #',         key: 'pedidoId',        width: 10 },
       { header: 'Fecha',            key: 'fecha',           width: 14 },
       { header: 'Usuario',          key: 'usuarioNombre',   width: 26 },
-      { header: 'PDV',              key: 'pdvNombre',       width: 26 },
+      { header: 'Departamento',     key: 'departamento',    width: 26 },
       { header: 'Código Zona',      key: 'codigoZona',      width: 14 },
       { header: 'Estado',           key: 'estado',          width: 14 },
       { header: 'Tipo Suministro',  key: 'tipoSuministro',  width: 20 },
@@ -282,7 +284,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       if (isPedidoNuevo && lastPedidoId !== null) {
         // Fila subtotal del pedido anterior
         const subRow = sheet.addRow({
-          pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
+          pedidoId: '', fecha: '', usuarioNombre: '', departamento: '', codigoZona: '', estado: '',
           tipoSuministro: '', suministro: `Subtotal pedido #${lastPedidoId}`,
           proveedor: '', cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
         })
@@ -305,7 +307,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
         pedidoId:       isPedidoNuevo ? row.pedidoId : '',
         fecha:          isPedidoNuevo && row.fecha ? new Date(row.fecha).toLocaleDateString('es-EC') : '',
         usuarioNombre:  isPedidoNuevo ? row.usuarioNombre : '',
-        pdvNombre:      isPedidoNuevo ? row.pdvNombre : '',
+        departamento:   isPedidoNuevo ? row.departamento : '',
         codigoZona:     isPedidoNuevo ? row.codigoZona : '',
         estado:         isPedidoNuevo ? row.estado : '',
         tipoSuministro: row.tipoSuministro,
@@ -334,7 +336,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     // Subtotal del último pedido
     if (lastPedidoId !== null) {
       const subRow = sheet.addRow({
-        pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
+        pedidoId: '', fecha: '', usuarioNombre: '', departamento: '', codigoZona: '', estado: '',
         tipoSuministro: '', suministro: `Subtotal pedido #${lastPedidoId}`,
         proveedor: '', cantidad: '', precioUnitario: '', subtotal: pedidoTotal,
       })
@@ -350,7 +352,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
     sheet.addRow([])
     const totalGeneral = rows.reduce((s, r) => s + Number(r.subtotal), 0)
     const totalRow = sheet.addRow({
-      pedidoId: '', fecha: '', usuarioNombre: '', pdvNombre: '', codigoZona: '', estado: '',
+      pedidoId: '', fecha: '', usuarioNombre: '', departamento: '', codigoZona: '', estado: '',
       tipoSuministro: '', suministro: '', proveedor: '', cantidad: '', precioUnitario: 'TOTAL GENERAL',
       subtotal: totalGeneral,
     })
