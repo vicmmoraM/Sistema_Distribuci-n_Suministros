@@ -64,6 +64,76 @@ async function syncUser(conn, login, nombres, departamento) {
   }
 }
 
+async function getDepartmentInfo(conn, departmentId) {
+  const [deptRows] = await conn.query(
+    `SELECT
+      d.descripcion AS departmentName,
+      COALESCE(pd.monto_autorizado, 0) AS departmentBudget
+     FROM departamentos d
+     LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
+     WHERE d.id_departamento = ?
+     LIMIT 1`,
+    [departmentId]
+  )
+
+  if (deptRows.length === 0) {
+    return { departmentName: null, departmentBudget: 0 }
+  }
+
+  return {
+    departmentName: deptRows[0].departmentName,
+    departmentBudget: Number(deptRows[0].departmentBudget || 0),
+  }
+}
+
+async function getRolePermissions(conn, roleId) {
+  if (!roleId) {
+    return {
+      pedidos: true,
+      reportes: false,
+      aprobacion: false,
+      configuracion: false,
+      roleId: null,
+      roleName: null,
+    }
+  }
+
+  const [rows] = await conn.query(
+    `SELECT
+      r.id_rol,
+      r.descripcion AS roleName,
+      COALESCE(rp.puede_pedidos, 1) AS pedidos,
+      COALESCE(rp.puede_reportes, 0) AS reportes,
+      COALESCE(rp.puede_aprobacion, 0) AS aprobacion,
+      COALESCE(rp.puede_configuracion, 0) AS configuracion
+     FROM roles r
+     LEFT JOIN rol_permisos rp ON rp.id_rol = r.id_rol
+     WHERE r.id_rol = ?
+     LIMIT 1`,
+    [roleId]
+  )
+
+  if (rows.length === 0) {
+    return {
+      pedidos: true,
+      reportes: false,
+      aprobacion: false,
+      configuracion: false,
+      roleId,
+      roleName: null,
+    }
+  }
+
+  return {
+    pedidos: Boolean(rows[0].pedidos),
+    reportes: Boolean(rows[0].reportes),
+    aprobacion: Boolean(rows[0].aprobacion),
+    configuracion: Boolean(rows[0].configuracion),
+    roleId: rows[0].id_rol,
+    roleName: rows[0].roleName,
+  }
+}
+
 /**
  * GET /api/auth/departamento/:username
  * Obtiene el departamento de un usuario por su login (para pre-llenar el formulario)
@@ -80,9 +150,11 @@ router.get('/departamento/:username', async (req, res) => {
 
     // Intentar buscar en la BD PRIMERO (funciona para usuarios existentes en ambos modos)
     const [bdRows] = await pool.query(
-      `SELECT u.id_departamento, u.nombres, d.descripcion as departmentName
+      `SELECT u.id_departamento, u.nombres, d.descripcion as departmentName,
+              COALESCE(pd.monto_autorizado, 0) AS departmentBudget
        FROM usuarios u
        INNER JOIN departamentos d ON u.id_departamento = d.id_departamento
+       LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
        WHERE LOWER(TRIM(u.login)) = LOWER(TRIM(?))`,
       [username]
     )
@@ -93,6 +165,7 @@ router.get('/departamento/:username', async (req, res) => {
       return res.json({
         id_departamento: user.id_departamento,
         departmentName: user.departmentName,
+        departmentBudget: Number(user.departmentBudget || 0),
         nombres: user.nombres,
       })
     }
@@ -150,7 +223,7 @@ router.post('/login', async (req, res) => {
       // ── MODO TEST: validar contra tabla usuarios ────────────────────
       // Primero obtener el usuario SIN validar departamento
       const [rows] = await conn.query(
-        'SELECT id_usuario, id_departamento, nombres, login, password FROM usuarios WHERE LOWER(TRIM(login)) = LOWER(TRIM(?))',
+        'SELECT id_usuario, id_departamento, id_rol, nombres, login, password, activo FROM usuarios WHERE LOWER(TRIM(login)) = LOWER(TRIM(?))',
         [username]
       )
 
@@ -162,6 +235,12 @@ router.post('/login', async (req, res) => {
 
       const user = rows[0]
       const userRealDepartmentId = user.id_departamento
+
+      if (!user.activo) {
+        await conn.rollback()
+        conn.release()
+        return res.status(403).json({ error: 'Tu usuario está desactivado. Contacta al administrador.' })
+      }
 
       if (user.password !== password) {
         await conn.rollback()
@@ -189,16 +268,14 @@ router.post('/login', async (req, res) => {
       await syncUser(conn, user.login, user.nombres, userRealDepartmentId)
 
       // Obtener el nombre del departamento
-      const [deptInfoRows] = await conn.query(
-        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
-        [userRealDepartmentId]
-      )
-      const departmentName = deptInfoRows.length > 0 ? deptInfoRows[0].descripcion : null
+      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, userRealDepartmentId)
+      const permissionsData = await getRolePermissions(conn, user.id_rol)
 
       await conn.commit()
       conn.release()
 
       req.session.loggedin = true
+      req.session.userId = user.id_usuario
       req.session.userlogin = user.login
       req.session.username = user.nombres
       req.session.departamento = userRealDepartmentId
@@ -210,6 +287,15 @@ router.post('/login', async (req, res) => {
           nombre: user.nombres, 
           departamento: userRealDepartmentId,
           departmentName: departmentName,
+          departmentBudget: departmentBudget,
+          roleId: permissionsData.roleId,
+          roleName: permissionsData.roleName,
+          permissions: {
+            pedidos: permissionsData.pedidos,
+            reportes: permissionsData.reportes,
+            aprobacion: permissionsData.aprobacion,
+            configuracion: permissionsData.configuracion,
+          },
         },
       })
 
@@ -222,15 +308,25 @@ router.post('/login', async (req, res) => {
 
       // ✅ Obtener el departamento REAL del usuario desde la BD o LDAP
       const [userInDbRows] = await conn.query(
-        'SELECT id_departamento FROM usuarios WHERE LOWER(TRIM(login)) = LOWER(TRIM(?))',
+        'SELECT id_usuario, id_departamento, id_rol, activo FROM usuarios WHERE LOWER(TRIM(login)) = LOWER(TRIM(?))',
         [user.username]
       )
 
       let userRealDepartmentId = null
+      let userId = null
+      let userRoleId = null
 
       if (userInDbRows.length > 0) {
         // Usuario ya existe en la BD — usar su departamento asignado
         userRealDepartmentId = userInDbRows[0].id_departamento
+        userId = userInDbRows[0].id_usuario
+        userRoleId = userInDbRows[0].id_rol
+
+        if (!userInDbRows[0].activo) {
+          await conn.rollback()
+          conn.release()
+          return res.status(403).json({ error: 'Tu usuario está desactivado. Contacta al administrador.' })
+        }
       } else {
         // Usuario nuevo — extraer departamento de LDAP
         const ldapData = await getUserDepartmentFromLDAP(user.username)
@@ -268,18 +364,23 @@ router.post('/login', async (req, res) => {
       }
 
       // Upsert — sincronizar nombre (el departamento es inmutable)
-      await syncUser(conn, user.username, user.displayName, userRealDepartmentId)
+      const syncedUserId = await syncUser(conn, user.username, user.displayName, userRealDepartmentId)
+      userId = userId || syncedUserId
 
-      const [deptRows] = await conn.query(
-        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
-        [userRealDepartmentId]
+      const [userRows] = await conn.query(
+        'SELECT id_rol FROM usuarios WHERE id_usuario = ? LIMIT 1',
+        [userId]
       )
-      const departmentName = deptRows.length > 0 ? deptRows[0].descripcion : null
+      userRoleId = userRows.length > 0 ? userRows[0].id_rol : null
+
+      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, userRealDepartmentId)
+      const permissionsData = await getRolePermissions(conn, userRoleId)
 
       await conn.commit()
       conn.release()
 
       req.session.loggedin = true
+      req.session.userId = userId
       req.session.userlogin = user.username
       req.session.username = user.displayName
       req.session.departamento = userRealDepartmentId
@@ -291,6 +392,15 @@ router.post('/login', async (req, res) => {
           nombre: user.displayName, 
           departamento: userRealDepartmentId,
           departmentName: departmentName,
+          departmentBudget: departmentBudget,
+          roleId: permissionsData.roleId,
+          roleName: permissionsData.roleName,
+          permissions: {
+            pedidos: permissionsData.pedidos,
+            reportes: permissionsData.reportes,
+            aprobacion: permissionsData.aprobacion,
+            configuracion: permissionsData.configuracion,
+          },
         },
       })
     }
@@ -328,20 +438,47 @@ router.get('/me', async (req, res) => {
   try {
     if (req.session && req.session.loggedin && req.session.userlogin) {
       const conn = await pool.getConnection()
-      const [deptRows] = await conn.query(
-        'SELECT descripcion FROM departamentos WHERE id_departamento = ?',
-        [req.session.departamento]
-      )
-      conn.release()
 
-      const departmentName = deptRows.length > 0 ? deptRows[0].descripcion : null
+      const [userRows] = await conn.query(
+        `SELECT id_usuario, id_departamento, id_rol, nombres, login, activo
+         FROM usuarios
+         WHERE LOWER(TRIM(login)) = LOWER(TRIM(?))
+         LIMIT 1`,
+        [req.session.userlogin]
+      )
+
+      if (userRows.length === 0 || !userRows[0].activo) {
+        conn.release()
+        req.session.destroy(() => {})
+        return res.status(401).json({ loggedin: false })
+      }
+
+      const currentUser = userRows[0]
+      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, currentUser.id_departamento)
+      const permissionsData = await getRolePermissions(conn, currentUser.id_rol)
+
+      req.session.userId = currentUser.id_usuario
+      req.session.userlogin = currentUser.login
+      req.session.username = currentUser.nombres
+      req.session.departamento = currentUser.id_departamento
+
+      conn.release()
 
       return res.json({
         loggedin: true,
-        login: req.session.userlogin,
-        nombre: req.session.username,
-        departamento: req.session.departamento,
+        login: currentUser.login,
+        nombre: currentUser.nombres,
+        departamento: currentUser.id_departamento,
         departmentName: departmentName,
+        departmentBudget: departmentBudget,
+        roleId: permissionsData.roleId,
+        roleName: permissionsData.roleName,
+        permissions: {
+          pedidos: permissionsData.pedidos,
+          reportes: permissionsData.reportes,
+          aprobacion: permissionsData.aprobacion,
+          configuracion: permissionsData.configuracion,
+        },
       })
     }
     return res.status(401).json({ loggedin: false })

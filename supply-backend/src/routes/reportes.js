@@ -73,7 +73,7 @@ const BASE_SELECT = `
     DATE_FORMAT(cp.fecha_registro, "%Y-%m-%d") AS fecha,
     u.login                           AS usuarioLogin,
     u.nombres                         AS usuarioNombre,
-    p.descripcion                     AS pdvNombre,
+    COALESCE(p.descripcion, 'N/A')    AS pdvNombre,
     COALESCE(zc.codigo_zona, '') AS codigoZona,
     e.descripcion                     AS estado,
     ts.descripcion                    AS tipoSuministro,
@@ -84,7 +84,7 @@ const BASE_SELECT = `
     (dp.cantidad * dp.precio_unitario) AS subtotal
   FROM cabecera_pedidos cp
   INNER JOIN usuarios u          ON cp.id_usuario       = u.id_usuario
-  INNER JOIN pdvs p              ON cp.id_pdv           = p.id_pdv
+  LEFT JOIN pdvs p               ON cp.id_pdv           = p.id_pdv
   LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
   INNER JOIN estado_pedidos e    ON cp.id_estado_pedido = e.id_estado_pedido
   INNER JOIN detalle_pedidos dp  ON dp.id_pedido        = cp.id_pedido
@@ -114,7 +114,7 @@ router.get('/pedidos', requireAuth, async (req, res) => {
       SELECT COUNT(DISTINCT cp.id_pedido) AS total
       FROM cabecera_pedidos cp
       INNER JOIN usuarios u       ON cp.id_usuario = u.id_usuario
-      INNER JOIN pdvs p           ON cp.id_pdv = p.id_pdv
+      LEFT JOIN pdvs p            ON cp.id_pdv = p.id_pdv
       INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
       ${where}
     `
@@ -129,7 +129,7 @@ router.get('/pedidos', requireAuth, async (req, res) => {
       SELECT DISTINCT cp.id_pedido, DATE_FORMAT(cp.fecha_registro, "%Y-%m-%d") AS fecha
       FROM cabecera_pedidos cp
       INNER JOIN usuarios u       ON cp.id_usuario = u.id_usuario
-      INNER JOIN pdvs p           ON cp.id_pdv = p.id_pdv
+      LEFT JOIN pdvs p            ON cp.id_pdv = p.id_pdv
       INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
       ${where}
       ORDER BY fecha DESC, cp.id_pedido DESC

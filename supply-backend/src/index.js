@@ -10,6 +10,7 @@ const authRoutes      = require('./routes/auth');
 const catalogosRoutes = require('./routes/catalogos');
 const pedidosRoutes   = require('./routes/pedidos');
 const reportesRoutes  = require('./routes/reportes');
+const adminRoutes     = require('./routes/admin');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -50,6 +51,7 @@ app.use('/api/auth',      authRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/pedidos',   pedidosRoutes);
 app.use('/api/reportes',  reportesRoutes);
+app.use('/api/admin',     adminRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

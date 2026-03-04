@@ -26,8 +26,8 @@ router.post('/', requireAuth, async (req, res) => {
   const { pdvId, items } = req.body
 
   // ── 1. Validación básica de estructura ─────────────────────────────────────
-  if (!pdvId || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'PDV e ítems son requeridos.' })
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Los ítems son requeridos.' })
   }
 
   const fecha = new Date().toISOString().split('T')[0]
@@ -36,27 +36,51 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     await conn.beginTransaction()
 
-    // ── 2. Verificar que el PDV existe y está activo ────────────────────────
-    const [pdvRows] = await conn.query(
-      `SELECT p.id_pdv, p.descripcion, p.direccion,
-              z.zona AS ciudad,
-              gp.monto_autorizado AS cupo
-       FROM pdvs p
-       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
-       INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
-       WHERE p.id_pdv = ? AND p.id_estado_pdv = 1`,
-      [pdvId]
+    // ── 2. Contexto del usuario (departamento y presupuesto) ───────────────
+    const [deptRows] = await conn.query(
+      `SELECT
+        LOWER(TRIM(d.descripcion)) AS departmentName,
+        COALESCE(pd.monto_autorizado, 0) AS departmentBudget
+       FROM departamentos d
+       LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
+       WHERE d.id_departamento = ?
+       LIMIT 1`,
+      [req.session.departamento]
     )
 
-    if (pdvRows.length === 0) {
+    const departmentName = deptRows.length > 0 ? deptRows[0].departmentName : ''
+    const departmentBudget = deptRows.length > 0 ? Number(deptRows[0].departmentBudget || 0) : 0
+    const esComercial = departmentName === 'comercial'
+
+    if (esComercial && !pdvId) {
       await conn.rollback()
       conn.release()
-      return res.status(400).json({ error: 'PDV no válido o inactivo.' })
+      return res.status(400).json({ error: 'PDV es requerido para el departamento Comercial.' })
     }
 
-    const pdv = pdvRows[0]
+    let pdv = null
+    if (esComercial) {
+      const [pdvRows] = await conn.query(
+        `SELECT p.id_pdv, p.descripcion, p.direccion,
+                z.zona AS ciudad,
+                gp.monto_autorizado AS cupo
+         FROM pdvs p
+         INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
+         INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
+         WHERE p.id_pdv = ? AND p.id_estado_pdv = 1`,
+        [pdvId]
+      )
 
-    // ── 3. Validar y recalcular cada ítem desde BD ──────────────────────────
+      if (pdvRows.length === 0) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({ error: 'PDV no válido o inactivo.' })
+      }
+
+      pdv = pdvRows[0]
+    }
+
+    // ── 4. Validar y recalcular cada ítem desde BD ──────────────────────────
     // No confiamos en precios ni totales del frontend
     const itemsValidados = []
 
@@ -93,7 +117,7 @@ router.post('/', requireAuth, async (req, res) => {
           AND (p.id_proveedor_principal IS NULL OR sp.id_proveedor = p.id_proveedor_principal)
          WHERE s.id_suministro = ? AND s.id_estado_suministro = 1
          GROUP BY s.id_suministro, s.descripcion, t.id_tipo_suministro, t.descripcion`,
-        [pdvId, item.suministroId]
+        [esComercial ? pdvId : null, item.suministroId]
       )
 
       if (sumRows.length === 0) {
@@ -118,18 +142,26 @@ router.post('/', requireAuth, async (req, res) => {
       })
     }
 
-    // ── 4. Verificar cupo en el backend ────────────────────────────────────
+    // ── 5. Verificar límite en el backend ───────────────────────────────────
     const totalPedido = itemsValidados.reduce((s, i) => s + i.total, 0)
 
-    if (totalPedido > Number(pdv.cupo)) {
+    if (esComercial) {
+      if (totalPedido > Number(pdv.cupo)) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+          error: `El total $${totalPedido.toFixed(2)} supera el cupo asignado $${Number(pdv.cupo).toFixed(2)}.`
+        })
+      }
+    } else if (totalPedido > departmentBudget) {
       await conn.rollback()
       conn.release()
       return res.status(400).json({
-        error: `El total $${totalPedido.toFixed(2)} supera el cupo asignado $${Number(pdv.cupo).toFixed(2)}.`
+        error: `El total $${totalPedido.toFixed(2)} supera el presupuesto del departamento $${departmentBudget.toFixed(2)}.`
       })
     }
 
-    // ── 5. Obtener o crear usuario (Upsert) ────────────────────────────────
+    // ── 6. Obtener o crear usuario (Upsert) ────────────────────────────────
     const [usuRows] = await conn.query(
       'SELECT id_usuario FROM usuarios WHERE login = ?',
       [req.session.userlogin]
@@ -152,14 +184,14 @@ router.post('/', requireAuth, async (req, res) => {
       usuarioId = usuRows[0].id_usuario
     }
 
-    // ── 6. Insertar cabecera del pedido ────────────────────────────────────
+    // ── 7. Insertar cabecera del pedido ────────────────────────────────────
     const [cabIns] = await conn.query(
       'INSERT INTO cabecera_pedidos (id_usuario, id_pdv, id_estado_pedido) VALUES (?, ?, 1)',
-      [usuarioId, pdvId]
+      [usuarioId, esComercial ? pdvId : null]
     )
     const cabeceraPedidoId = cabIns.insertId
 
-    // ── 7. Insertar detalles ───────────────────────────────────────────────
+    // ── 8. Insertar detalles ───────────────────────────────────────────────
     for (const item of itemsValidados) {
       await conn.query(
         'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
@@ -170,22 +202,31 @@ router.post('/', requireAuth, async (req, res) => {
     await conn.commit()
     conn.release()
 
-    // ── 8. Calcular subtotales ─────────────────────────────────────────────
+    // ── 9. Calcular subtotales ─────────────────────────────────────────────
     const subtotalOficina  = itemsValidados.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
     const subtotalLimpieza = itemsValidados.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
 
-    // ── 9. Generar CSV ─────────────────────────────────────────────────────
+    // ── 10. Generar CSV ────────────────────────────────────────────────────
     const filesPath = process.env.FILES_PATH || './temp_files'
     if (!fs.existsSync(filesPath)) fs.mkdirSync(filesPath, { recursive: true })
 
-    const nombreArchivo = `pedidoSuministro_${pdv.descripcion}_${fecha}`
+    const nombreArchivo = `pedidoSuministro_${req.session.userlogin}_${fecha}`
     const csvPath       = path.join(filesPath, `${nombreArchivo}.csv`)
+
+    const lugarSolicitud = esComercial
+      ? (pdv?.descripcion || req.session.userlogin)
+      : `Departamento ${departmentName.toUpperCase()}`
+    const ciudadSolicitud = esComercial ? (pdv?.ciudad || 'N/A') : 'N/A'
+    const direccionSolicitud = esComercial ? (pdv?.direccion || 'N/A') : 'N/A'
+    const limiteMonto = esComercial ? Number(pdv?.cupo || 0) : Number(departmentBudget || 0)
+    const limiteEtiqueta = esComercial ? 'Cupo PDV' : 'Presupuesto Departamento'
 
     const headerLines = [
       `Solicitado por:,${req.session.username}`,
-      `PDV:,${pdv.descripcion}`,
-      `Ciudad:,${pdv.ciudad}`,
-      `Dirección:,${pdv.direccion}`,
+      `Origen:,${lugarSolicitud}`,
+      `Ciudad:,${ciudadSolicitud}`,
+      `Dirección:,${direccionSolicitud}`,
+      `${limiteEtiqueta}:,$${limiteMonto.toFixed(2)}`,
       '',
     ].join('\n')
 
@@ -217,7 +258,7 @@ router.post('/', requireAuth, async (req, res) => {
       `,,, Total:,${totalPedido.toFixed(2)}`,
     ].join('\n'))
 
-    // ── 10. Enviar email ───────────────────────────────────────────────────
+    // ── 11. Enviar email ───────────────────────────────────────────────────
     let emailEnviado = false
 
     if (process.env.MAIL_ENABLED === 'true') {
