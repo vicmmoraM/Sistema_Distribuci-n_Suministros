@@ -28,7 +28,6 @@ export default function App() {
           <Route path="/notificacion" element={
             <ProtectedRoute><Notificacion /></ProtectedRoute>
           } />
-
           {/* Solo Contabilidad, Financiero, Auditoría, Tecnología */}
           <Route path="/reportes" element={
             <ProtectedRoute requiredPerm="reportes"><Reportes /></ProtectedRoute>

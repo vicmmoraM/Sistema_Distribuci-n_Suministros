@@ -65,10 +65,12 @@ export function usePermissions() {
   const esComercial = nombreDepto === 'comercial'
 
   // Generar lista de rutas permitidas basándose en los permisos
-  const rutasPermitidas = Object.keys(puede)
-    .filter(permiso => puede[permiso] === true)
-    .map(permiso => RUTAS_POR_PERMISO[permiso])
-    .filter(Boolean)
+  const rutasPermitidas = [
+    ...Object.keys(puede)
+      .filter(permiso => puede[permiso] === true)
+      .map(permiso => RUTAS_POR_PERMISO[permiso])
+      .filter(Boolean)
+  ]
 
   return { puede, nombreDepto, esComercial, rutasPermitidas }
 }

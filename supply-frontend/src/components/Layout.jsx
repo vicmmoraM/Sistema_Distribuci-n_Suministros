@@ -15,8 +15,10 @@ export default function Layout({ showLogout = true }) {
   const { rutasPermitidas } = usePermissions()
   const navigate = useNavigate()
   const [adminPanelOpen, setAdminPanelOpen] = useState(true)
+  const [pedidosPanelOpen, setPedidosPanelOpen] = useState(true)
 
   const isConfiguracion = pathname === '/configuracion'
+  const isHome = pathname === '/home'
 
   const fecha = new Date().toLocaleDateString('es-EC', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -141,6 +143,32 @@ export default function Layout({ showLogout = true }) {
     },
   ]
 
+  // Items del Panel de Pedidos
+  const pedidosItems = [
+    { 
+      key: 'mis-pedidos', 
+      label: 'Mis Pedidos',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
+          stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+        </svg>
+      ),
+    },
+    { 
+      key: 'nuevo-pedido', 
+      label: 'Nuevo Pedido',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
+          stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M12 4v16m8-8H4"/>
+        </svg>
+      ),
+    },
+  ]
+
   return (
     <>
       {/* ════════════════════ NAVBAR ════════════════════ */}
@@ -194,53 +222,270 @@ export default function Layout({ showLogout = true }) {
       <aside className={`sidebar-aside ${isOpen ? 'sidebar-open' : 'sidebar-closed'} ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', paddingX: '0.75rem', paddingTop: '0.5rem' }}>
           {/* Links normales de navegación */}
-          {links.map(link => {
+          {links.map((link, index) => {
             const activo = pathname === link.ruta
             return (
-              <button
-                key={link.ruta}
-                onClick={() => {
-                  navigate(link.ruta)
-                  close()
-                }}
-                title={isCollapsed ? link.label : ''}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: isCollapsed ? 'center' : 'flex-start',
-                  gap: '0.75rem',
-                  padding: isCollapsed ? '0.85rem' : '0.85rem 1.1rem',
-                  marginX: '0.75rem',
-                  borderRadius: '0.5rem',
-                  border: 'none',
-                  background: activo ? '#eff0ff' : 'transparent',
-                  color: activo ? '#2c2f88' : '#5a5f7b',
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '0.93rem',
-                  letterSpacing: '0.3px',
-                  fontWeight: activo ? 600 : 400,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  borderLeft: activo && !isCollapsed ? '3px solid #2c2f88' : '3px solid transparent',
-                  paddingLeft: activo && !isCollapsed ? 'calc(1.1rem - 3px)' : isCollapsed ? '0.85rem' : '1.1rem',
-                  position: 'relative',
-                }}
-                onMouseEnter={e => {
-                  if (!activo) {
-                    e.currentTarget.style.background = '#f5f6f8'
-                    e.currentTarget.style.color = '#2c2f88'
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (!activo) {
-                    e.currentTarget.style.background = 'transparent'
-                    e.currentTarget.style.color = '#5a5f7b'
-                  }
-                }}
-              >
-                {link.icon}
-                {!isCollapsed && <span>{link.label}</span>}
-              </button>
+              <div key={link.ruta}>
+                <button
+                  onClick={() => {
+                    navigate(link.ruta)
+                    close()
+                  }}
+                  title={isCollapsed ? link.label : ''}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: isCollapsed ? 'center' : 'flex-start',
+                    gap: '0.8rem',
+                    padding: isCollapsed ? '0.75rem' : '0.75rem 1rem',
+                    marginX: '0.75rem',
+                    borderRadius: '0.65rem',
+                    border: `1px solid ${activo ? '#d9dbff' : 'transparent'}`,
+                    background: activo ? '#eff0ff' : '#ffffff',
+                    color: activo ? '#2c2f88' : '#5a5f7b',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '0.93rem',
+                    letterSpacing: '0.3px',
+                    fontWeight: activo ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    borderLeft: activo && !isCollapsed ? '3px solid #2c2f88' : '3px solid transparent',
+                    paddingLeft: activo && !isCollapsed ? 'calc(1rem - 3px)' : isCollapsed ? '0.75rem' : '1rem',
+                    position: 'relative',
+                    boxShadow: activo ? '0 4px 10px rgba(44, 47, 136, 0.12)' : 'none',
+                  }}
+                  onMouseEnter={e => {
+                    if (!activo) {
+                      e.currentTarget.style.background = '#f8f9fc'
+                      e.currentTarget.style.borderColor = '#e6e8ef'
+                      e.currentTarget.style.color = '#2c2f88'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!activo) {
+                      e.currentTarget.style.background = '#ffffff'
+                      e.currentTarget.style.borderColor = 'transparent'
+                      e.currentTarget.style.color = '#5a5f7b'
+                    }
+                  }}
+                >
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '1.9rem',
+                    height: '1.9rem',
+                    borderRadius: '0.55rem',
+                    background: activo ? '#2c2f88' : '#edf1f9',
+                    color: activo ? '#ffffff' : '#5a5f7b',
+                    flexShrink: 0,
+                    transition: 'all 0.2s ease',
+                  }}>
+                    {link.icon}
+                  </span>
+                  {!isCollapsed && <span style={{ lineHeight: 1 }}>{link.label}</span>}
+                </button>
+
+                {/* Panel de Pedidos - Aparece justo debajo de "Pedidos" */}
+                {link.ruta === '/home' && isHome && (
+                  <>
+                    {!isCollapsed ? (
+                      <>
+                        <div style={{
+                          height: '1px',
+                          background: '#e0e2e6',
+                          margin: '1.25rem 0.75rem 1rem',
+                        }}></div>
+                        
+                        <div style={{
+                          margin: '0 0.75rem',
+                          background: '#ffffff',
+                          border: '1px solid #e0e2e6',
+                          borderRadius: '0.75rem',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                          overflow: 'hidden',
+                        }}>
+                          <div 
+                            onClick={() => setPedidosPanelOpen(!pedidosPanelOpen)}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '0.75rem 0.75rem',
+                              cursor: 'pointer',
+                              background: '#f5f6f8',
+                              borderBottom: pedidosPanelOpen ? '1px solid #e0e2e6' : 'none',
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.background = '#eff0ff'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.background = '#f5f6f8'
+                            }}
+                          >
+                            <h3 style={{
+                              margin: 0,
+                              fontSize: '0.82rem',
+                              fontFamily: "'Syne', sans-serif",
+                              color: '#2c2f88',
+                              fontWeight: 700,
+                              letterSpacing: '0.2px',
+                            }}>Gestión de Pedidos</h3>
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              width="16" 
+                              height="16" 
+                              fill="none"
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24" 
+                              strokeWidth={2}
+                              style={{
+                                color: '#6b7280',
+                                transform: pedidosPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s ease',
+                              }}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                          </div>
+
+                          {pedidosPanelOpen && (
+                            <div style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.45rem',
+                              padding: '0.6rem 0.5rem',
+                            }}>
+                              {pedidosItems.map(item => {
+                                const activo = hash === `#${item.key}` || (!hash && item.key === 'nuevo-pedido')
+                                return (
+                                  <button
+                                    key={item.key}
+                                    onClick={() => {
+                                      navigate(`/home#${item.key}`)
+                                      close()
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'flex-start',
+                                      gap: '0.6rem',
+                                      width: '100%',
+                                      padding: '0.6rem 0.75rem',
+                                      borderRadius: '0.5rem',
+                                      border: 'none',
+                                      background: activo ? '#2c2f88' : 'transparent',
+                                      color: activo ? '#ffffff' : '#5a5f7b',
+                                      fontFamily: "'DM Sans', sans-serif",
+                                      fontSize: '0.86rem',
+                                      fontWeight: activo ? 600 : 500,
+                                      letterSpacing: '0.2px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s ease',
+                                      textAlign: 'left',
+                                    }}
+                                    onMouseEnter={e => {
+                                      if (!activo) {
+                                        e.currentTarget.style.background = '#f5f6f8'
+                                        e.currentTarget.style.color = '#2c2f88'
+                                      }
+                                    }}
+                                    onMouseLeave={e => {
+                                      if (!activo) {
+                                        e.currentTarget.style.background = 'transparent'
+                                        e.currentTarget.style.color = '#5a5f7b'
+                                      }
+                                    }}
+                                  >
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '1.6rem',
+                                      height: '1.6rem',
+                                      flexShrink: 0,
+                                    }}>
+                                      {item.icon}
+                                    </span>
+                                    <span style={{ lineHeight: 1.3 }}>{item.label}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                      </>
+                    ) : (
+                      <>
+                        <div style={{
+                          height: '1px',
+                          background: '#e0e2e6',
+                          margin: '1.25rem 0.5rem 1rem',
+                        }}></div>
+                        
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.35rem',
+                          padding: '0 0.5rem',
+                        }}>
+                          {pedidosItems.map(item => {
+                            const activo = hash === `#${item.key}` || (!hash && item.key === 'nuevo-pedido')
+                            return (
+                              <button
+                                key={item.key}
+                                onClick={() => {
+                                  navigate(`/home#${item.key}`)
+                                  close()
+                                }}
+                                title={item.label}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '100%',
+                                  minHeight: '40px',
+                                  padding: '0.7rem',
+                                  borderRadius: '0.6rem',
+                                  border: 'none',
+                                  background: activo ? '#2c2f88' : 'transparent',
+                                  color: activo ? '#ffffff' : '#5a5f7b',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                }}
+                              onMouseEnter={e => {
+                                if (!activo) {
+                                  e.currentTarget.style.background = '#f5f6f8'
+                                  e.currentTarget.style.color = '#2c2f88'
+                                }
+                              }}
+                              onMouseLeave={e => {
+                                if (!activo) {
+                                  e.currentTarget.style.background = 'transparent'
+                                  e.currentTarget.style.color = '#5a5f7b'
+                                }
+                              }}
+                            >
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '1.8rem',
+                                height: '1.8rem',
+                              }}>
+                                {item.icon}
+                              </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
             )
           })}
 
@@ -328,15 +573,16 @@ export default function Layout({ showLogout = true }) {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'flex-start',
-                                gap: '0.65rem',
-                                padding: '0.65rem 0.75rem',
+                                gap: '0.55rem',
+                                width: '100%',
+                                padding: '0.6rem 0.75rem',
                                 borderRadius: '0.5rem',
                                 border: 'none',
                                 background: activo ? '#2c2f88' : 'transparent',
                                 color: activo ? '#ffffff' : '#5a5f7b',
                                 fontFamily: "'DM Sans', sans-serif",
-                                fontSize: '0.85rem',
-                                fontWeight: activo ? 600 : 400,
+                                fontSize: '0.86rem',
+                                fontWeight: activo ? 600 : 500,
                                 letterSpacing: '0.2px',
                                 cursor: 'pointer',
                                 transition: 'all 0.2s ease',
@@ -355,8 +601,17 @@ export default function Layout({ showLogout = true }) {
                                 }
                               }}
                             >
-                              {item.icon}
-                              <span>{item.label}</span>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '1.6rem',
+                                height: '1.6rem',
+                                flexShrink: 0,
+                              }}>
+                                {item.icon}
+                              </span>
+                              <span style={{ lineHeight: 1.3 }}>{item.label}</span>
                             </button>
                           )
                         })}
@@ -372,29 +627,36 @@ export default function Layout({ showLogout = true }) {
                     margin: '1.25rem 0.5rem 1rem',
                   }}></div>
                   
-                  {adminItems.map(item => {
-                    const activo = hash === `#${item.key}` || (!hash && item.key === 'dashboard')
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => {
-                          navigate(`/configuracion#${item.key}`)
-                          close()
-                        }}
-                        title={item.label}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '0.85rem',
-                          marginX: '0.5rem',
-                          borderRadius: '0.5rem',
-                          border: 'none',
-                          background: activo ? '#2c2f88' : 'transparent',
-                          color: activo ? '#ffffff' : '#5a5f7b',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                        }}
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.35rem',
+                    padding: '0 0.5rem',
+                  }}>
+                    {adminItems.map(item => {
+                      const activo = hash === `#${item.key}` || (!hash && item.key === 'dashboard')
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => {
+                            navigate(`/configuracion#${item.key}`)
+                            close()
+                          }}
+                          title={item.label}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '100%',
+                            minHeight: '40px',
+                            padding: '0.7rem',
+                            borderRadius: '0.6rem',
+                            border: 'none',
+                            background: activo ? '#2c2f88' : 'transparent',
+                            color: activo ? '#ffffff' : '#5a5f7b',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                          }}
                         onMouseEnter={e => {
                           if (!activo) {
                             e.currentTarget.style.background = '#f5f6f8'
@@ -408,17 +670,28 @@ export default function Layout({ showLogout = true }) {
                           }
                         }}
                       >
-                        {item.icon}
-                      </button>
-                    )
-                  })}
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '1.8rem',
+                          height: '1.8rem',
+                        }}>
+                          {item.icon}
+                        </span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </>
               )}
             </>
           )}
         </nav>
       </aside>
+      
 
+      
       <style>{`
         /* ════════ NAVBAR STYLES ════════ */
         .main-navbar {

@@ -18,6 +18,21 @@ const ESTADO_BADGE = {
   'Entregado': 'badge--entregado',
 }
 
+const CAMPOS_EXPORTACION = [
+  { id: 'pedidoId', label: 'ID Pedido', checked: true },
+  { id: 'fecha', label: 'Fecha', checked: true },
+  { id: 'usuarioNombre', label: 'Usuario (Nombre)', checked: true },
+  { id: 'usuarioLogin', label: 'Usuario (Login)', checked: false },
+  { id: 'departamento', label: 'Departamento', checked: true },
+  { id: 'estado', label: 'Estado', checked: true },
+  { id: 'tipoSuministro', label: 'Tipo Suministro', checked: true },
+  { id: 'suministro', label: 'Suministro', checked: true },
+  { id: 'proveedor', label: 'Proveedor', checked: true },
+  { id: 'cantidad', label: 'Cantidad', checked: true },
+  { id: 'precioUnitario', label: 'Precio Unitario', checked: true },
+  { id: 'subtotal', label: 'Subtotal', checked: true },
+]
+
 function buildParams(filtros) {
   const p = {}
   if (filtros.modo === 'mes') {
@@ -91,6 +106,9 @@ export default function Reportes() {
   const [estados,     setEstados]     = useState([])
   const [tiposSuministro, setTiposSuministro] = useState([])
   const [descargando, setDescargando] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showCustomModal, setShowCustomModal] = useState(false)
+  const [selectedFields, setSelectedFields] = useState(CAMPOS_EXPORTACION.map(c => ({ ...c })))
 
   useEffect(() => {
     if (authLoading) return
@@ -137,6 +155,7 @@ export default function Reportes() {
 
   async function handleDescargarExcel() {
     setDescargando(true)
+    setShowExportMenu(false)
     try {
       const params = new URLSearchParams(buildParams(filtros)).toString()
       const response = await api.get(
@@ -158,6 +177,46 @@ export default function Reportes() {
     }
   }
 
+  function handleToggleField(fieldId) {
+    setSelectedFields(prev => prev.map(f =>
+      f.id === fieldId ? { ...f, checked: !f.checked } : f
+    ))
+  }
+
+  async function handleDescargarExcelPersonalizado() {
+    setDescargando(true)
+    setShowCustomModal(false)
+    try {
+      const selectedFieldIds = selectedFields.filter(f => f.checked).map(f => f.id)
+      const params = new URLSearchParams({
+        ...buildParams(filtros),
+        campos: selectedFieldIds.join(',')
+      }).toString()
+      
+      const response = await api.get(
+        `/reportes/pedidos/excel${params ? '?' + params : ''}`,
+        { responseType: 'blob' }
+      )
+      const url  = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href  = url
+      link.setAttribute('download', `reporte_pedidos_${new Date().toISOString().slice(0, 10)}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      setError('Error al generar el Excel personalizado.')
+    } finally {
+      setDescargando(false)
+    }
+  }
+
+  function handleAbrirCustomModal() {
+    setShowExportMenu(false)
+    setShowCustomModal(true)
+  }
+
   const totalGeneral = pedidos.reduce((s, p) => s + p.totalPedido, 0)
   const anios = Array.from({ length: 5 }, (_, i) => anioActual - i)
   return (
@@ -176,21 +235,67 @@ export default function Reportes() {
                 : 'Sin resultados'}
             </p>
           </div>
-          <button
-            className="rep-btn rep-btn--excel"
-            onClick={handleDescargarExcel}
-            disabled={descargando || pedidos.length === 0}>
-            {descargando
-              ? <><span className="rep-spinner" /> Generando...</>
-              : <>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className="rep-btn rep-btn--ghost"
+              onClick={() => cargarPedidos(paginacion.page)}
+              disabled={cargando}
+              title="Actualizar datos">
+              {cargando ? (
+                <><span className="rep-spinner" /> Actualizando...</>
+              ) : (
+                <>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M10 12L14 16M14 12L10 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M1 4V10H7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M23 20V14H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M20.49 9C19.9828 7.56678 19.1209 6.28536 17.9845 5.27542C16.8482 4.26548 15.4745 3.55976 13.9917 3.22426C12.5089 2.88875 10.9652 2.93434 9.50481 3.35677C8.04437 3.77921 6.71475 4.56471 5.64 5.64L1 10M23 14L18.36 18.36C17.2853 19.4353 15.9556 20.2208 14.4952 20.6432C13.0348 21.0657 11.4911 21.1112 10.0083 20.7757C8.52547 20.4402 7.1518 19.7345 6.01547 18.7246C4.87913 17.7146 4.01717 16.4332 3.51 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  Exportar Excel
-                </>}
-          </button>
+                  Actualizar
+                </>
+              )}
+            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                className="rep-btn rep-btn--excel"
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={pedidos.length === 0}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M10 12L14 16M14 12L10 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Exportar Excel
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: '0.35rem' }}>
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+
+              {/* Dropdown Menu */}
+              {showExportMenu && (
+                <div className="rep-export-menu">
+                  <button
+                    className="rep-export-menu__item"
+                    onClick={handleDescargarExcel}
+                    disabled={descargando}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Excel Detallado
+                  </button>
+                  <button
+                    className="rep-export-menu__item"
+                    onClick={handleAbrirCustomModal}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Excel Personalizado
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* ── Filtros ────────────────────────────────────────── */}
@@ -391,6 +496,63 @@ export default function Reportes() {
               Siguiente →
             </button>
           </div>
+        )}
+
+        {/* ── Modal Personalización ──────────────────────────── */}
+        {showCustomModal && (
+          <>
+            <div className="rep-modal-overlay" onClick={() => setShowCustomModal(false)} />
+            <div className="rep-modal">
+              <div className="rep-modal__header">
+                <h3>Excel Personalizado</h3>
+                <button
+                  className="rep-modal__close"
+                  onClick={() => setShowCustomModal(false)}>
+                  ✕
+                </button>
+              </div>
+              
+              <div className="rep-modal__body">
+                <p className="rep-modal__subtitle">Selecciona los campos que deseas incluir:</p>
+                <div className="rep-modal__fields">
+                  {selectedFields.map(field => (
+                    <label key={field.id} className="rep-modal__field-label">
+                      <input
+                        type="checkbox"
+                        checked={field.checked}
+                        onChange={() => handleToggleField(field.id)}
+                        className="rep-modal__checkbox"
+                      />
+                      <span>{field.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rep-modal__footer">
+                <button
+                  className="rep-btn rep-btn--ghost"
+                  onClick={() => setShowCustomModal(false)}>
+                  Cancelar
+                </button>
+                <button
+                  className="rep-btn rep-btn--excel"
+                  onClick={handleDescargarExcelPersonalizado}
+                  disabled={descargando || selectedFields.filter(f => f.checked).length === 0}>
+                  {descargando
+                    ? <><span className="rep-spinner" /> Generando...</>
+                    : <>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                          <polyline points="7 10 12 15 17 10"/>
+                          <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Descargar
+                      </>}
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
       </div>
