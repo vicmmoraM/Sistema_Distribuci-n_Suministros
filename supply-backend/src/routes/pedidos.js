@@ -59,9 +59,12 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     let pdv = null
+    let proveedorDepartamento = null
+    
     if (esComercial) {
       const [pdvRows] = await conn.query(
         `SELECT p.id_pdv, p.descripcion, p.direccion,
+                p.id_proveedor_principal,
                 z.zona AS ciudad,
                 gp.monto_autorizado AS cupo
          FROM pdvs p
@@ -78,6 +81,26 @@ router.post('/', requireAuth, async (req, res) => {
       }
 
       pdv = pdvRows[0]
+    } else {
+      // Para departamentos NO comerciales, calcular proveedor según rotación automática
+      const mesActual = new Date().getMonth() + 1
+      
+      const [provRows] = await conn.query(
+        `SELECT dpr.id_proveedor
+         FROM departamento_proveedores_rotacion dpr
+         WHERE dpr.id_departamento = ?
+           AND dpr.orden_rotacion = (
+             SELECT (((? - 1) % COUNT(*)) + 1)
+             FROM departamento_proveedores_rotacion
+             WHERE id_departamento = ?
+           )
+         LIMIT 1`,
+        [req.session.departamento, mesActual, req.session.departamento]
+      )
+      
+      if (provRows.length > 0) {
+        proveedorDepartamento = provRows[0].id_proveedor
+      }
     }
 
     // ── 4. Validar y recalcular cada ítem desde BD ──────────────────────────
@@ -95,29 +118,54 @@ router.post('/', requireAuth, async (req, res) => {
       }
 
       // Verificar que el suministro existe y está disponible
+      // Prioridad: 1) Proveedor principal del PDV (Comercial), 2) Proveedor del departamento (mes actual), 3) Más barato
+      const proveedorPreferido = esComercial && pdv ? pdv.id_proveedor_principal : proveedorDepartamento
+      
       const [sumRows] = await conn.query(
-        `SELECT s.id_suministro, s.descripcion,
+        `SELECT 
+          s.id_suministro, 
+          s.descripcion,
           COALESCE(
-            MIN(sp.precio_compra),
             (
-              SELECT sp2.precio_compra
-              FROM suministros_precios sp2
-              WHERE sp2.id_suministro = s.id_suministro
-              ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
+              SELECT sp.id_proveedor
+              FROM suministros_precios sp
+              WHERE sp.id_suministro = s.id_suministro
+                AND (? IS NULL OR sp.id_proveedor = ?)
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+              LIMIT 1
+            ),
+            (
+              SELECT sp.id_proveedor
+              FROM suministros_precios sp
+              WHERE sp.id_suministro = s.id_suministro
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+              LIMIT 1
+            )
+          ) AS proveedorId,
+          COALESCE(
+            (
+              SELECT sp.precio_compra
+              FROM suministros_precios sp
+              WHERE sp.id_suministro = s.id_suministro
+                AND (? IS NULL OR sp.id_proveedor = ?)
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+              LIMIT 1
+            ),
+            (
+              SELECT sp.precio_compra
+              FROM suministros_precios sp
+              WHERE sp.id_suministro = s.id_suministro
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
               LIMIT 1
             ),
             0
           ) AS precio,
-          t.id_tipo_suministro AS tipoId, t.descripcion AS tipoNombre
+          t.id_tipo_suministro AS tipoId, 
+          t.descripcion AS tipoNombre
          FROM suministros s
          INNER JOIN tipo_suministros t ON s.id_tipo_suministro = t.id_tipo_suministro
-         LEFT JOIN pdvs p ON p.id_pdv = ?
-         LEFT JOIN suministros_precios sp
-           ON sp.id_suministro = s.id_suministro
-          AND (p.id_proveedor_principal IS NULL OR sp.id_proveedor = p.id_proveedor_principal)
-         WHERE s.id_suministro = ? AND s.id_estado_suministro = 1
-         GROUP BY s.id_suministro, s.descripcion, t.id_tipo_suministro, t.descripcion`,
-        [esComercial ? pdvId : null, item.suministroId]
+         WHERE s.id_suministro = ? AND s.id_estado_suministro = 1`,
+        [proveedorPreferido, proveedorPreferido, proveedorPreferido, proveedorPreferido, item.suministroId]
       )
 
       if (sumRows.length === 0) {
@@ -133,6 +181,7 @@ router.post('/', requireAuth, async (req, res) => {
       // Recalcular precio y total desde BD — ignoramos lo que mandó el frontend
       itemsValidados.push({
         suministroId:     suministro.id_suministro,
+        proveedorId:      suministro.proveedorId,
         suministroNombre: suministro.descripcion,
         tipoId:           suministro.tipoId,
         tipoNombre:       suministro.tipoNombre,
@@ -194,8 +243,8 @@ router.post('/', requireAuth, async (req, res) => {
     // ── 8. Insertar detalles ───────────────────────────────────────────────
     for (const item of itemsValidados) {
       await conn.query(
-        'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
-        [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario]
+        'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario, id_proveedor) VALUES (?, ?, ?, ?, ?)',
+        [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario, item.proveedorId]
       )
     }
 
