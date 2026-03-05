@@ -29,3 +29,22 @@ ON DUPLICATE KEY UPDATE
   puede_reportes = VALUES(puede_reportes),
   puede_aprobacion = VALUES(puede_aprobacion),
   puede_configuracion = VALUES(puede_configuracion);
+
+-- Crear usuario administrador para pasante.desarrollo
+INSERT INTO usuarios (id_departamento, id_rol, login, nombres, email, activo)
+SELECT 
+  (SELECT id_departamento FROM departamentos LIMIT 1),
+  (SELECT id_rol FROM roles WHERE descripcion = 'Administrador' LIMIT 1),
+  'pasante.desarrollo',
+  'Pasante Desarrollo',
+  'pasante.desarrollo@farmcorp.com.ec',
+  1
+ON DUPLICATE KEY UPDATE
+  id_rol = (SELECT id_rol FROM roles WHERE descripcion = 'Administrador' LIMIT 1),
+  activo = 1;
+
+-- Añadir id_proveedor a detalle_pedidos para relacionar con proveedores y no exista 
+-- ambigüedad con precios de suministros
+ALTER TABLE detalle_pedidos ADD COLUMN id_proveedor INT;
+ALTER TABLE detalle_pedidos ADD CONSTRAINT fk_det_prov 
+  FOREIGN KEY (id_proveedor) REFERENCES proveedores (id_proveedor);

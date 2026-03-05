@@ -89,7 +89,6 @@ CREATE TABLE usuarios (
     id_departamento INT NOT NULL,
     id_rol INT NOT NULL,
     login VARCHAR(60) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
     nombres VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
     activo TINYINT(1) NOT NULL DEFAULT 1,

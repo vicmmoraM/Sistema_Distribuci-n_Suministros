@@ -207,12 +207,12 @@ INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra) VAL
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'TIJERAS 5" punta REDONDA'), 2, 0.46);
 
 -- USUARIO LOCAL DE PRUEBA
-INSERT INTO usuarios (id_departamento, id_rol, login, password, nombres, email)
-VALUES (
-	(SELECT id_departamento FROM departamentos WHERE descripcion = 'Tecnologia' LIMIT 1),
-	(SELECT id_rol FROM roles WHERE descripcion = 'Solicitador' LIMIT 1),
-	'test.local',
-	'123456',
-	'Usuario Test Local',
-	'test.local@farmcorp.com.ec'
-);
+-- INSERT INTO usuarios (id_departamento, id_rol, login, password, nombres, email)
+-- VALUES (
+--	(SELECT id_departamento FROM departamentos WHERE descripcion = 'Tecnologia' LIMIT 1),
+--	(SELECT id_rol FROM roles WHERE descripcion = 'Solicitador' LIMIT 1),
+--	'test.local',
+--	'123456',
+--	'Usuario Test Local',
+--	'test.local@farmcorp.com.ec'
+--);
