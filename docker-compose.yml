@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Docker Compose - Sistema de Distribución de Suministros
+# Orquesta los servicios de Backend y Frontend
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Backend API
+  # ────────────────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./supply-backend
+      dockerfile: Dockerfile
+    container_name: supply-backend
+    ports:
+      - "3001:3001"
+    environment:
+      # Base de datos
+      - DB_HOST=10.101.183.40
+      - DB_PORT=3306
+      - DB_NAME=DB_SupplyChain
+      - DB_USER=dbSystemSC
+      - DB_PASS=C0n3x10nSC2024
+      
+      # Autenticación
+      - AUTH_MODE=ldap
+      
+      # LDAP
+      - LDAP_URL=ldap://SRVDCR000.farmcorp.com.ec
+      - LDAP_HOST=LDAP://SRVDCR000.farmcorp.com.ec
+      - LDAP_SERVICE_DN=src_TI_ldap@farmcorp.com.ec
+      - LDAP_SERVICE_PASS=Farmc0rp*
+      - LDAP_BASE_OU=ou=usuarios,ou=farmcorp,dc=farmcorp,dc=com,dc=ec
+      
+      # Servidor
+      - PORT=3001
+      - NODE_ENV=production
+      
+      # Sesiones
+      - SESSION_SECRET=FarmcorpSupplyChain2024SecretKey
+      - SESSION_MAX_AGE=28800000
+      
+      # CORS - Frontend permitido (puedes agregar múltiples orígenes separados por coma)
+      # Ejemplos:
+      #   - http://localhost:5173
+      #   - http://localhost:5173,http://127.0.0.1:5173
+      #   - http://localhost:5173,https://app.farmcorp.com.ec
+      - CORS_ORIGIN=http://localhost:5173,http://172.28.32.1:5173
+      
+      # Email
+      - MAIL_ENABLED=true
+      - MAIL_HOST=chimborazo.ecuahosting.net
+    
+    restart: unless-stopped
+    networks:
+      - supply-chain
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Frontend React
+  # ────────────────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./supply-frontend
+      dockerfile: Dockerfile
+    container_name: supply-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://172.28.32.1:3001
+    restart: unless-stopped
+    networks:
+      - supply-chain
+    depends_on:
+      - backend
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Base de Datos (Opcional - si deseas correr MySQL en Docker)
+  # ────────────────────────────────────────────────────────────────────────────
+  # database:
+  #   image: mysql:8.0
+  #   container_name: supply-db
+  #   environment:
+  #     - MYSQL_ROOT_PASSWORD=root_password
+  #     - MYSQL_DATABASE=DB_SupplyChain
+  #     - MYSQL_USER=dbSystemSC
+  #     - MYSQL_PASSWORD=C0n3x10nSC2024
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - db_data:/var/lib/mysql
+  #   networks:
+  #     - supply-chain
+  #   restart: unless-stopped
+
+# ────────────────────────────────────────────────────────────────────────────
+# Volúmenes
+# ────────────────────────────────────────────────────────────────────────────
+volumes:
+  db_data:
+
+# ────────────────────────────────────────────────────────────────────────────
+# Redes
+# ────────────────────────────────────────────────────────────────────────────
+networks:
+  supply-chain:
+    driver: bridge

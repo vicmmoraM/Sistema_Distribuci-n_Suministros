@@ -39,6 +39,16 @@ export default function App() {
               <Aprobaciones />
             </ProtectedRoute>
           } />
+          <Route path="/aprobaciones/pedidos" element={
+            <ProtectedRoute requiredPerm="aprobacion">
+              <Aprobaciones />
+            </ProtectedRoute>
+          } />
+          <Route path="/aprobaciones/adquisiciones" element={
+            <ProtectedRoute requiredPerm="aprobacion">
+              <Aprobaciones />
+            </ProtectedRoute>
+          } />
 
           {/* Solo Tecnología */}
           <Route path="/configuracion" element={

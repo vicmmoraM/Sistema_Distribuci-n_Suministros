@@ -45,6 +45,8 @@ export default function Home() {
   const [pdvSeleccionado, setPdv] = useState(null)
   const [tipoSeleccionado, setTipo] = useState('')
   const [suministroId, setSuministroId] = useState('')
+  const [suministroSearch, setSuministroSearch] = useState('')
+  const [showSuministroDropdown, setShowSuministroDropdown] = useState(false)
   const [cantidad, setCantidad] = useState(1)
 
   // Carrito
@@ -83,12 +85,33 @@ export default function Home() {
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
-    if (!tipoSeleccionado) { setSuministros([]); setSuministroId(''); return }
+    if (!tipoSeleccionado) {
+      setSuministros([])
+      setSuministroId('')
+      setSuministroSearch('')
+      setShowSuministroDropdown(false)
+      return
+    }
     const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
     api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`)
-      .then(r => { setSuministros(r.data); setSuministroId('') })
+      .then(r => {
+        setSuministros(r.data)
+        setSuministroId('')
+        setSuministroSearch('')
+          setShowSuministroDropdown(false)
+      })
       .catch(() => {})
   }, [tipoSeleccionado, pdvSeleccionado?.id_pdv])
+
+        const getSuministroLabel = (s) => `${s.descripcion} - $${Number(s.precio).toFixed(2)} `
+
+  const suministroSearchTerm = suministroSearch.trim().toLowerCase()
+  const suministrosFiltrados = suministroSearchTerm
+    ? suministros.filter((s) => {
+      const text = `${s.descripcion} ${s.proveedor}`.toLowerCase()
+      return text.includes(suministroSearchTerm)
+    })
+    : suministros
 
   // Totales
   const subtotalOficina  = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
@@ -116,7 +139,15 @@ export default function Home() {
       total:            Number(cantidad) * Number(sum.precio),
     }])
     setSuministroId('')
+    setSuministroSearch('')
+    setShowSuministroDropdown(false)
     setCantidad(1)
+  }
+
+  const handleSelectSuministro = (suministro) => {
+    setSuministroId(String(suministro.id_suministro))
+    setSuministroSearch(getSuministroLabel(suministro))
+    setShowSuministroDropdown(false)
   }
 
   const handleEliminar = (id) => setCarrito(prev => prev.filter(i => i.id !== id))
@@ -238,7 +269,14 @@ export default function Home() {
           <>
             {/* Departamento / Punto de venta */}
             <section className="section-card">
-              <h2 className="section-header">{esComercial ? 'Punto de venta' : 'Departamento'}</h2>
+              <h2 className="section-header section-header--with-logo">
+                <span>{esComercial ? 'Punto de venta' : 'Departamento'}</span>
+                <img 
+                  src="/images/LOGO OFICIAL FC COMPLETO FONDO TRANSPARENTE.png" 
+                  alt="Logo Fundación Crisfe" 
+                  className="home-logo"
+                />
+              </h2>
               <div className="pdv-selector-wrapper">
                 <input
                   type="text"
@@ -288,16 +326,42 @@ export default function Home() {
                   ))}
                 </select>
 
-                <select value={suministroId} onChange={e => setSuministroId(e.target.value)}
-                  disabled={!tipoSeleccionado}
-                  className="form-select">
-                  <option value="">Suministro...</option>
-                  {suministros.map(s => (
-                    <option key={s.id_suministro} value={s.id_suministro}>
-                      {s.descripcion} — ${Number(s.precio).toFixed(2)} - {s.proveedor} 
-                    </option>
-                  ))}
-                </select>
+                <div className="supply-picker-group">
+                  <input
+                    type="text"
+                    value={suministroSearch}
+                    onChange={e => {
+                      setSuministroSearch(e.target.value)
+                      setSuministroId('')
+                      setShowSuministroDropdown(true)
+                    }}
+                    onFocus={() => setShowSuministroDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowSuministroDropdown(false), 120)}
+                    disabled={!tipoSeleccionado}
+                    placeholder={tipoSeleccionado ? 'Buscar suministro por nombre o proveedor...' : 'Selecciona primero el tipo'}
+                    className="form-input"
+                  />
+                  {showSuministroDropdown && tipoSeleccionado && (
+                    <div className="supply-dropdown" role="listbox" aria-label="Suministros sugeridos">
+                      {suministrosFiltrados.length === 0 ? (
+                        <div className="supply-dropdown-item supply-dropdown-item--empty">
+                          Sin coincidencias
+                        </div>
+                      ) : (
+                        suministrosFiltrados.slice(0, 12).map((s) => (
+                          <button
+                            key={s.id_suministro}
+                            type="button"
+                            className="supply-dropdown-item"
+                            onMouseDown={() => handleSelectSuministro(s)}
+                          >
+                            {getSuministroLabel(s)}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <input
                   type="number" min={1} max={10} value={cantidad}

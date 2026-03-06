@@ -16,9 +16,12 @@ export default function Layout({ showLogout = true }) {
   const navigate = useNavigate()
   const [adminPanelOpen, setAdminPanelOpen] = useState(true)
   const [pedidosPanelOpen, setPedidosPanelOpen] = useState(true)
+  const [aprobacionesPanelOpen, setAprobacionesPanelOpen] = useState(true)
 
   const isConfiguracion = pathname === '/configuracion'
   const isHome = pathname === '/home'
+  const isAprobaciones = pathname === '/aprobaciones' || pathname.startsWith('/aprobaciones/')
+  const isAprobacionesDefault = pathname === '/aprobaciones'
 
   const fecha = new Date().toLocaleDateString('es-EC', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -169,6 +172,34 @@ export default function Layout({ showLogout = true }) {
     },
   ]
 
+  // Items del Panel de Aprobaciones
+  const aprobacionesItems = [
+    { 
+      key: 'pedidos', 
+      label: 'Aprobación de Pedidos',
+      ruta: '/aprobaciones/pedidos',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
+          stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 7l2 2 4-4"/>
+        </svg>
+      ),
+    },
+    { 
+      key: 'adquisiciones', 
+      label: 'Aprobación Adquisiciones',
+      ruta: '/aprobaciones/adquisiciones',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
+          stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round"
+            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 9m12-9l2 9m-2.5-9h.01m-7.01 0h.01M9 21h6M16 6l2 2 4-4"/>
+        </svg>
+      ),
+    },
+  ]
+
   return (
     <>
       {/* ════════════════════ NAVBAR ════════════════════ */}
@@ -223,7 +254,10 @@ export default function Layout({ showLogout = true }) {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', paddingX: '0.75rem', paddingTop: '0.5rem' }}>
           {/* Links normales de navegación */}
           {links.map((link, index) => {
-            const activo = pathname === link.ruta
+            // Detectar si está activo: ruta exacta o subruta (para Aprobaciones)
+            const activo = link.ruta === '/aprobaciones' 
+              ? isAprobaciones 
+              : pathname === link.ruta
             return (
               <div key={link.ruta}>
                 <button
@@ -438,6 +472,205 @@ export default function Layout({ showLogout = true }) {
                                 key={item.key}
                                 onClick={() => {
                                   navigate(`/home#${item.key}`)
+                                  close()
+                                }}
+                                title={item.label}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '100%',
+                                  minHeight: '40px',
+                                  padding: '0.7rem',
+                                  borderRadius: '0.6rem',
+                                  border: 'none',
+                                  background: activo ? '#2c2f88' : 'transparent',
+                                  color: activo ? '#ffffff' : '#5a5f7b',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                }}
+                              onMouseEnter={e => {
+                                if (!activo) {
+                                  e.currentTarget.style.background = '#f5f6f8'
+                                  e.currentTarget.style.color = '#2c2f88'
+                                }
+                              }}
+                              onMouseLeave={e => {
+                                if (!activo) {
+                                  e.currentTarget.style.background = 'transparent'
+                                  e.currentTarget.style.color = '#5a5f7b'
+                                }
+                              }}
+                            >
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '1.8rem',
+                                height: '1.8rem',
+                              }}>
+                                {item.icon}
+                              </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+                {/* Panel de Aprobaciones - Aparece justo debajo de "Aprobaciones" */}
+                {link.ruta === '/aprobaciones' && isAprobaciones && (
+                  <>
+                    {!isCollapsed ? (
+                      <>
+                        <div style={{
+                          height: '1px',
+                          background: '#e0e2e6',
+                          margin: '1.25rem 0.75rem 1rem',
+                        }}></div>
+                        
+                        <div style={{
+                          margin: '0 0.75rem',
+                          background: '#ffffff',
+                          border: '1px solid #e0e2e6',
+                          borderRadius: '0.75rem',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                          overflow: 'hidden',
+                        }}>
+                          <div 
+                            onClick={() => setAprobacionesPanelOpen(!aprobacionesPanelOpen)}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '0.75rem 0.75rem',
+                              cursor: 'pointer',
+                              background: '#f5f6f8',
+                              borderBottom: aprobacionesPanelOpen ? '1px solid #e0e2e6' : 'none',
+                              transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.background = '#eff0ff'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.background = '#f5f6f8'
+                            }}
+                          >
+                            <h3 style={{
+                              margin: 0,
+                              fontSize: '0.82rem',
+                              fontFamily: "'Syne', sans-serif",
+                              color: '#2c2f88',
+                              fontWeight: 700,
+                              letterSpacing: '0.2px',
+                            }}>Gestión de Aprobaciones</h3>
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              width="16" 
+                              height="16" 
+                              fill="none"
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24" 
+                              strokeWidth={2}
+                              style={{
+                                color: '#6b7280',
+                                transform: aprobacionesPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s ease',
+                              }}
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                          </div>
+
+                          {aprobacionesPanelOpen && (
+                            <div style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '0.45rem',
+                              padding: '0.6rem 0.5rem',
+                            }}>
+                              {aprobacionesItems.map(item => {
+                                const activo = pathname === item.ruta || (isAprobacionesDefault && item.key === 'pedidos')
+                                return (
+                                  <button
+                                    key={item.key}
+                                    onClick={() => {
+                                      navigate(item.ruta)
+                                      close()
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'flex-start',
+                                      gap: '0.6rem',
+                                      width: '100%',
+                                      padding: '0.6rem 0.75rem',
+                                      borderRadius: '0.5rem',
+                                      border: 'none',
+                                      background: activo ? '#2c2f88' : 'transparent',
+                                      color: activo ? '#ffffff' : '#5a5f7b',
+                                      fontFamily: "'DM Sans', sans-serif",
+                                      fontSize: '0.86rem',
+                                      fontWeight: activo ? 600 : 500,
+                                      letterSpacing: '0.2px',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s ease',
+                                      textAlign: 'left',
+                                    }}
+                                    onMouseEnter={e => {
+                                      if (!activo) {
+                                        e.currentTarget.style.background = '#f5f6f8'
+                                        e.currentTarget.style.color = '#2c2f88'
+                                      }
+                                    }}
+                                    onMouseLeave={e => {
+                                      if (!activo) {
+                                        e.currentTarget.style.background = 'transparent'
+                                        e.currentTarget.style.color = '#5a5f7b'
+                                      }
+                                    }}
+                                  >
+                                    <span style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '1.6rem',
+                                      height: '1.6rem',
+                                      flexShrink: 0,
+                                    }}>
+                                      {item.icon}
+                                    </span>
+                                    <span style={{ lineHeight: 1.3 }}>{item.label}</span>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                      </>
+                    ) : (
+                      <>
+                        <div style={{
+                          height: '1px',
+                          background: '#e0e2e6',
+                          margin: '1.25rem 0.5rem 1rem',
+                        }}></div>
+                        
+                        <div style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.35rem',
+                          padding: '0 0.5rem',
+                        }}>
+                          {aprobacionesItems.map(item => {
+                            const activo = pathname === item.ruta || (isAprobacionesDefault && item.key === 'pedidos')
+                            return (
+                              <button
+                                key={item.key}
+                                onClick={() => {
+                                  navigate(item.ruta)
                                   close()
                                 }}
                                 title={item.label}

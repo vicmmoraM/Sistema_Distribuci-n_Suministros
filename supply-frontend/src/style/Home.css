@@ -92,6 +92,10 @@
   border-color: #FF2C2C;
 }
 
+.home-logo {
+  height: 24px;
+  margin-left: auto;
+}
 /* Main Content - Compacto */
 .home-main {
   max-width: 90rem;
@@ -118,6 +122,13 @@
   margin: 0 0 0.625rem 0;
   text-transform: uppercase;
   letter-spacing: 0.025em;
+}
+
+.home-main .section-header--with-logo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 /* PDV Selection */
@@ -176,6 +187,54 @@
   grid-template-columns: 2fr 2fr 1fr auto;
   gap: 0.5rem;
   align-items: center;
+}
+
+.home-main .supply-picker-group {
+  min-width: 0;
+  position: relative;
+}
+
+.home-main .supply-picker-group .form-input {
+  width: 100%;
+}
+
+.home-main .supply-dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.12);
+  z-index: 25;
+}
+
+.home-main .supply-dropdown-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.8rem;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.home-main .supply-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.home-main .supply-dropdown-item:hover {
+  background: #eef2ff;
+}
+
+.home-main .supply-dropdown-item--empty {
+  color: #6b7280;
+  cursor: default;
 }
 
 .home-main .form-select,

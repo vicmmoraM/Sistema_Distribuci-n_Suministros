@@ -333,16 +333,68 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       to: { row: 4, column: columnsConfig.length },
     }
 
+    // Verificar si la columna 'subtotal' está seleccionada
+    const includeSubtotal = columnsConfig.some(col => col.key === 'subtotal')
+
+    // Columnas que se repiten por pedido y conviene fusionar verticalmente
+    const mergeablePedidoKeys = new Set([
+      'pedidoId',
+      'fecha',
+      'usuarioLogin',
+      'usuarioNombre',
+      'departamento',
+      'pdvNombre',
+      'codigoZona',
+      'estado',
+    ])
+    const mergeableColumns = columnsConfig
+      .map((col, idx) => ({ key: col.key, colNumber: idx + 1 }))
+      .filter((col) => mergeablePedidoKeys.has(col.key))
+
+    const mergePedidoGroupCells = (startRow, endRow) => {
+      if (!startRow || !endRow || startRow >= endRow) return
+
+      mergeableColumns.forEach(({ key, colNumber }) => {
+        const topCell = sheet.getCell(startRow, colNumber)
+        if (topCell.value === null || topCell.value === undefined || topCell.value === '') return
+
+        // Evita reintentar merges sobre celdas ya fusionadas.
+        if (topCell.isMerged) return
+
+        try {
+          sheet.mergeCells(startRow, colNumber, endRow, colNumber)
+        } catch (mergeError) {
+          // No bloqueamos la generación completa del archivo por un merge puntual.
+          console.warn(`No se pudo fusionar columna ${colNumber} entre filas ${startRow}-${endRow}:`, mergeError.message)
+          return
+        }
+
+        topCell.alignment = {
+          ...(topCell.alignment || {}),
+          vertical: 'middle',
+          horizontal: (key === 'pedidoId' || key === 'fecha') ? 'center' : (topCell.alignment?.horizontal || 'left'),
+        }
+      })
+    }
+
     // Filas de datos
     let lastPedidoId = null
     let colorToggle  = false
     let pedidoTotal  = 0
+    let currentPedidoStartRow = null
+    let currentPedidoEndRow = null
 
     rows.forEach((row) => {
       const isPedidoNuevo = row.pedidoId !== lastPedidoId
 
-      // Subtotal del pedido anterior
       if (isPedidoNuevo && lastPedidoId !== null) {
+        mergePedidoGroupCells(currentPedidoStartRow, currentPedidoEndRow)
+        currentPedidoStartRow = null
+        currentPedidoEndRow = null
+      }
+
+      // Subtotal del pedido anterior (solo si la columna subtotal está activa)
+      if (isPedidoNuevo && lastPedidoId !== null && includeSubtotal) {
         const subRow = sheet.addRow({})
         
         // Llenar campos según columnas configuradas
@@ -361,7 +413,10 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
             cell.alignment = { horizontal: 'right' }
           }
         })
-        
+      }
+
+      // Actualizar contadores y colores al cambiar de pedido
+      if (isPedidoNuevo && lastPedidoId !== null) {
         pedidoTotal = 0
         colorToggle = !colorToggle
       }
@@ -408,10 +463,16 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
           cell.alignment = { horizontal: 'center' }
         }
       })
+
+      if (isPedidoNuevo) currentPedidoStartRow = dataRow.number
+      currentPedidoEndRow = dataRow.number
     })
 
-    // Subtotal del último pedido
-    if (lastPedidoId !== null) {
+    // Aplicar merge al último grupo de pedido
+    mergePedidoGroupCells(currentPedidoStartRow, currentPedidoEndRow)
+
+    // Subtotal del último pedido (solo si la columna subtotal está activa)
+    if (lastPedidoId !== null && includeSubtotal) {
       const subRow = sheet.addRow({})
       
       columnsConfig.forEach((col, colIdx) => {
@@ -431,20 +492,40 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       })
     }
 
-    // Total general
+    // Total general - calculado siempre desde la BD, independiente de si la columna está visible
     sheet.addRow([])
     const totalGeneral = rows.reduce((s, r) => s + Number(r.subtotal), 0)
     const totalRow = sheet.addRow({})
     
+    // Determinar dónde colocar el total: priorizar columna 'subtotal', luego 'precioUnitario', o la última disponible
+    const subtotalColIdx = columnsConfig.findIndex(col => col.key === 'subtotal')
+    const precioColIdx = columnsConfig.findIndex(col => col.key === 'precioUnitario')
+    const lastColIdx = columnsConfig.length - 1
+    
+    // Índice donde se mostrará el monto del total
+    const totalValueColIdx = subtotalColIdx !== -1 ? subtotalColIdx : 
+                             (precioColIdx !== -1 ? precioColIdx : lastColIdx)
+    
+    // Índice donde se mostrará la etiqueta "TOTAL GENERAL"
+    // Si hay más de una columna, usar la anterior al valor; si no, usar la misma
+    const totalLabelColIdx = totalValueColIdx > 0 ? totalValueColIdx - 1 : 0
+    
     columnsConfig.forEach((col, colIdx) => {
       const cell = totalRow.getCell(colIdx + 1)
       
-      if (col.key === 'precioUnitario') {
+      if (colIdx === totalLabelColIdx) {
+        // Colocar etiqueta del total
         cell.value = 'TOTAL GENERAL'
         cell.alignment = { horizontal: 'right' }
-      } else if (col.key === 'subtotal') {
+      } else if (colIdx === totalValueColIdx) {
+        // Colocar valor del total
         cell.value = totalGeneral
-        cell.numFmt = col.format
+        // Usar formato de moneda del campo correspondiente
+        if (isCurrencyField(col.key)) {
+          cell.numFmt = col.format
+        } else {
+          cell.numFmt = '"$"#,##0.00'
+        }
         cell.alignment = { horizontal: 'right' }
       }
       

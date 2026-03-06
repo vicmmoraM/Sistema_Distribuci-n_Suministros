@@ -353,4 +353,531 @@ router.post('/', requireAuth, async (req, res) => {
   }
 })
 
+/**
+ * GET /api/pedidos/aprobaciones
+ * Lista de pedidos con filtros para el módulo de aprobaciones
+ */
+router.get('/aprobaciones', requireAuth, async (req, res) => {
+  try {
+    console.log('GET /api/pedidos/aprobaciones - Query params:', req.query)
+    
+    const { search, departamento, estado, fechaDesde, fechaHasta, page = 1, limit = 10 } = req.query
+    const offset = (Number(page) - 1) * Number(limit)
+    
+    const conditions = []
+    const paramsCount = []
+    
+    // Filtro de búsqueda por ID o nombre de usuario
+    if (search) {
+      conditions.push('(cp.id_pedido = ? OR u.nombres LIKE ? OR u.login LIKE ?)')
+      paramsCount.push(search, `%${search}%`, `%${search}%`)
+    }
+    
+    // Filtro por departamento
+    if (departamento) {
+      conditions.push('d.id_departamento = ?')
+      paramsCount.push(departamento)
+    }
+    
+    // Filtro por estado
+    if (estado) {
+      conditions.push('cp.id_estado_pedido = ?')
+      paramsCount.push(estado)
+    }
+    
+    // Filtro por rango de fechas
+    if (fechaDesde) {
+      conditions.push('DATE(cp.fecha_registro) >= ?')
+      paramsCount.push(fechaDesde)
+    }
+    
+    if (fechaHasta) {
+      conditions.push('DATE(cp.fecha_registro) <= ?')
+      paramsCount.push(fechaHasta)
+    }
+    
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+    
+    // Contar total de registros
+    const countSQL = `
+      SELECT COUNT(*) as total
+      FROM cabecera_pedidos cp
+      INNER JOIN usuarios u ON cp.id_usuario = u.id_usuario
+      LEFT JOIN departamentos d ON u.id_departamento = d.id_departamento
+      INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
+      ${whereClause}
+    `
+    const [[{ total }]] = await pool.query(countSQL, paramsCount)
+    
+    // Crear parámetros para el SELECT (duplicar los filtros)
+    const paramsData = [...paramsCount, Number(limit), offset]
+    
+    // Obtener datos paginados
+    const dataSQL = `
+      SELECT 
+        cp.id_pedido,
+        cp.fecha_registro,
+        u.nombres AS usuario_nombre,
+        u.login AS usuario_login,
+        COALESCE(d.descripcion, 'Sin departamento') AS departamento,
+        e.descripcion AS estado,
+        COALESCE(
+          (SELECT SUM(dp.cantidad * dp.precio_unitario)
+           FROM detalle_pedidos dp
+           WHERE dp.id_pedido = cp.id_pedido), 0
+        ) AS total
+      FROM cabecera_pedidos cp
+      INNER JOIN usuarios u ON cp.id_usuario = u.id_usuario
+      LEFT JOIN departamentos d ON u.id_departamento = d.id_departamento
+      INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
+      ${whereClause}
+      ORDER BY cp.fecha_registro DESC
+      LIMIT ? OFFSET ?
+    `
+    const [rows] = await pool.query(dataSQL, paramsData)
+    
+    const response = {
+      data: rows,
+      total: Number(total),
+      page: Number(page),
+      limit: Number(limit),
+      totalPages: Math.ceil(Number(total) / Number(limit)),
+    }
+    return res.json(response)
+  } catch (error) {
+    return res.status(500).json({ error: 'Error al obtener pedidos', details: error.message })
+  }
+})
+
+/**
+ * GET /api/pedidos/:id
+ * Obtener detalle completo de un pedido
+ */
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    
+    // Obtener cabecera del pedido
+    const [cabRows] = await pool.query(
+      `SELECT 
+        cp.id_pedido,
+        cp.fecha_registro,
+        u.nombres AS usuario_nombre,
+        u.login AS usuario_login,
+        COALESCE(d.descripcion, 'Sin departamento') AS departamento,
+        e.descripcion AS estado,
+        cp.id_estado_pedido
+      FROM cabecera_pedidos cp
+      INNER JOIN usuarios u ON cp.id_usuario = u.id_usuario
+      LEFT JOIN departamentos d ON u.id_departamento = d.id_departamento
+      INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
+      WHERE cp.id_pedido = ?`,
+      [id]
+    )
+    
+    if (cabRows.length === 0) {
+      return res.status(404).json({ error: 'Pedido no encontrado' })
+    }
+    
+    // Obtener items del pedido
+    const [itemRows] = await pool.query(
+      `SELECT 
+        dp.id_suministro,
+        s.descripcion AS suministro,
+        ts.descripcion AS tipo_suministro,
+        dp.cantidad,
+        dp.precio_unitario,
+        (dp.cantidad * dp.precio_unitario) AS subtotal,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor
+      FROM detalle_pedidos dp
+      INNER JOIN suministros s ON dp.id_suministro = s.id_suministro
+      INNER JOIN tipo_suministros ts ON s.id_tipo_suministro = ts.id_tipo_suministro
+      LEFT JOIN proveedores pr ON dp.id_proveedor = pr.id_proveedor
+      WHERE dp.id_pedido = ?
+      ORDER BY ts.descripcion, s.descripcion`,
+      [id]
+    )
+    
+    const total = itemRows.reduce((sum, item) => sum + Number(item.subtotal), 0)
+    
+    return res.json({
+      ...cabRows[0],
+      items: itemRows,
+      total,
+    })
+  } catch (error) {
+    return res.status(500).json({ error: 'Error al obtener el pedido' })
+  }
+})
+
+/**
+ * PUT /api/pedidos/:id/items
+ * Actualiza los items de un pedido pendiente (cantidades y eliminaciones).
+ */
+router.put('/:id/items', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { items } = req.body || {}
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Debes enviar al menos un producto.' })
+    }
+
+    const parsedItems = items.map((item) => ({
+      suministroId: Number(item?.suministroId),
+      cantidad: Number(item?.cantidad),
+    }))
+
+    const hasInvalidItem = parsedItems.some(
+      (item) => !Number.isInteger(item.suministroId)
+        || item.suministroId <= 0
+        || !Number.isInteger(item.cantidad)
+        || item.cantidad <= 0
+    )
+
+    if (hasInvalidItem) {
+      return res.status(400).json({ error: 'Items inválidos. Verifica producto y cantidad.' })
+    }
+
+    const conn = await pool.getConnection()
+
+    try {
+      await conn.beginTransaction()
+
+      const [[pedido]] = await conn.query(
+        `SELECT cp.id_pedido, cp.id_estado_pedido, e.descripcion AS estado
+         FROM cabecera_pedidos cp
+         INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
+         WHERE cp.id_pedido = ?`,
+        [id]
+      )
+
+      if (!pedido) {
+        await conn.rollback()
+        conn.release()
+        return res.status(404).json({ error: 'Pedido no encontrado' })
+      }
+
+      const estado = String(pedido.estado || '').toLowerCase()
+      if (!(estado.includes('pend') || estado.includes('espera'))) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({ error: 'Solo se pueden editar pedidos pendientes.' })
+      }
+
+      const [currentDetailRows] = await conn.query(
+        `SELECT id_suministro, precio_unitario, id_proveedor
+         FROM detalle_pedidos
+         WHERE id_pedido = ?`,
+        [id]
+      )
+
+      const detailBySupply = new Map(
+        currentDetailRows.map((row) => [Number(row.id_suministro), row])
+      )
+
+      const hasUnknownSupply = parsedItems.some(
+        (item) => !detailBySupply.has(item.suministroId)
+      )
+
+      if (hasUnknownSupply) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({ error: 'No se puede agregar productos nuevos en esta edición.' })
+      }
+
+      await conn.query('DELETE FROM detalle_pedidos WHERE id_pedido = ?', [id])
+
+      for (const item of parsedItems) {
+        const current = detailBySupply.get(item.suministroId)
+        await conn.query(
+          `INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario, id_proveedor)
+           VALUES (?, ?, ?, ?, ?)`,
+          [
+            id,
+            item.suministroId,
+            item.cantidad,
+            Number(current.precio_unitario || 0),
+            current.id_proveedor || null,
+          ]
+        )
+      }
+
+      const [cabRows] = await conn.query(
+        `SELECT 
+          cp.id_pedido,
+          cp.fecha_registro,
+          u.nombres AS usuario_nombre,
+          u.login AS usuario_login,
+          COALESCE(d.descripcion, 'Sin departamento') AS departamento,
+          e.descripcion AS estado,
+          cp.id_estado_pedido
+        FROM cabecera_pedidos cp
+        INNER JOIN usuarios u ON cp.id_usuario = u.id_usuario
+        LEFT JOIN departamentos d ON u.id_departamento = d.id_departamento
+        INNER JOIN estado_pedidos e ON cp.id_estado_pedido = e.id_estado_pedido
+        WHERE cp.id_pedido = ?`,
+        [id]
+      )
+
+      const [itemRows] = await conn.query(
+        `SELECT 
+          dp.id_suministro,
+          s.descripcion AS suministro,
+          ts.descripcion AS tipo_suministro,
+          dp.cantidad,
+          dp.precio_unitario,
+          (dp.cantidad * dp.precio_unitario) AS subtotal,
+          COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor
+        FROM detalle_pedidos dp
+        INNER JOIN suministros s ON dp.id_suministro = s.id_suministro
+        INNER JOIN tipo_suministros ts ON s.id_tipo_suministro = ts.id_tipo_suministro
+        LEFT JOIN proveedores pr ON dp.id_proveedor = pr.id_proveedor
+        WHERE dp.id_pedido = ?
+        ORDER BY ts.descripcion, s.descripcion`,
+        [id]
+      )
+
+      const total = itemRows.reduce((sum, item) => sum + Number(item.subtotal), 0)
+
+      await conn.commit()
+      conn.release()
+
+      return res.json({
+        success: true,
+        message: 'Pedido actualizado correctamente',
+        pedido: {
+          ...cabRows[0],
+          items: itemRows,
+          total,
+        },
+      })
+    } catch (error) {
+      await conn.rollback()
+      conn.release()
+      throw error
+    }
+  } catch (error) {
+    console.error('Error en PUT /pedidos/:id/items:', error)
+    return res.status(500).json({ error: 'Error al actualizar el pedido', details: error.message })
+  }
+})
+
+/**
+ * POST /api/pedidos/:id/aprobar
+ * Aprobar un pedido (cambiar estado a Aprobado)
+ */
+router.post('/:id/aprobar', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { items, observaciones } = req.body || {}
+    const conn = await pool.getConnection()
+    
+    try {
+      await conn.beginTransaction()
+      
+      // Verificar que el pedido existe y está pendiente
+      const [[pedido]] = await conn.query(
+        'SELECT id_estado_pedido FROM cabecera_pedidos WHERE id_pedido = ?',
+        [id]
+      )
+      
+      if (!pedido) {
+        await conn.rollback()
+        conn.release()
+        return res.status(404).json({ error: 'Pedido no encontrado' })
+      }
+
+      // Si vienen items editados desde aprobaciones, persistirlos antes de aprobar.
+      if (Array.isArray(items)) {
+        if (items.length === 0) {
+          await conn.rollback()
+          conn.release()
+          return res.status(400).json({ error: 'El pedido debe tener al menos un producto.' })
+        }
+
+        const [currentDetailRows] = await conn.query(
+          `SELECT id_suministro, precio_unitario, id_proveedor
+           FROM detalle_pedidos
+           WHERE id_pedido = ?`,
+          [id]
+        )
+
+        const detailBySupply = new Map(
+          currentDetailRows.map((row) => [Number(row.id_suministro), row])
+        )
+
+        const parsedItems = items.map((item) => ({
+          suministroId: Number(item?.suministroId),
+          cantidad: Number(item?.cantidad),
+        }))
+
+        const hasInvalidItem = parsedItems.some(
+          (item) => !Number.isInteger(item.suministroId)
+            || item.suministroId <= 0
+            || !Number.isInteger(item.cantidad)
+            || item.cantidad <= 0
+        )
+
+        if (hasInvalidItem) {
+          await conn.rollback()
+          conn.release()
+          return res.status(400).json({ error: 'Items editados inválidos. Verifica cantidad y suministro.' })
+        }
+
+        const hasUnknownSupply = parsedItems.some(
+          (item) => !detailBySupply.has(item.suministroId)
+        )
+
+        if (hasUnknownSupply) {
+          await conn.rollback()
+          conn.release()
+          return res.status(400).json({ error: 'No se puede agregar productos nuevos en aprobación, solo editar/eliminar existentes.' })
+        }
+
+        await conn.query('DELETE FROM detalle_pedidos WHERE id_pedido = ?', [id])
+
+        for (const item of parsedItems) {
+          const current = detailBySupply.get(item.suministroId)
+          await conn.query(
+            `INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario, id_proveedor)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+              id,
+              item.suministroId,
+              item.cantidad,
+              Number(current.precio_unitario || 0),
+              current.id_proveedor || null,
+            ]
+          )
+        }
+      }
+      
+      // Obtener el ID del estado aprobado (soporta variantes como Aprobado/Aprobada)
+      const [[estadoAprobado]] = await conn.query(
+        "SELECT id_estado_pedido FROM estado_pedidos WHERE LOWER(descripcion) LIKE 'aprob%' LIMIT 1"
+      )
+      
+      if (!estadoAprobado) {
+        await conn.rollback()
+        conn.release()
+        return res.status(500).json({ error: 'Estado "Aprobado" no encontrado en la BD' })
+      }
+      
+      // Actualizar estado del pedido y observaciones opcionales (si la columna existe).
+      const observacionesLimpias = String(observaciones || '').trim()
+      const [obsColumnRows] = await conn.query(
+        `SELECT COUNT(*) AS total
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'cabecera_pedidos'
+           AND COLUMN_NAME = 'observaciones_aprobacion'`
+      )
+      const hasObsColumn = Number(obsColumnRows?.[0]?.total || 0) > 0
+
+      if (hasObsColumn) {
+        await conn.query(
+          `UPDATE cabecera_pedidos 
+           SET id_estado_pedido = ?, observaciones_aprobacion = ?
+           WHERE id_pedido = ?`,
+          [estadoAprobado.id_estado_pedido, observacionesLimpias || null, id]
+        )
+      } else {
+        await conn.query(
+          `UPDATE cabecera_pedidos 
+           SET id_estado_pedido = ?
+           WHERE id_pedido = ?`,
+          [estadoAprobado.id_estado_pedido, id]
+        )
+      }
+      
+      await conn.commit()
+      conn.release()
+      
+      return res.json({ 
+        success: true, 
+        message: `Pedido #${id} aprobado correctamente` 
+      })
+      
+    } catch (error) {
+      await conn.rollback()
+      conn.release()
+      throw error
+    }
+  } catch (error) {
+    console.error('Error en POST /pedidos/:id/aprobar:', error)
+    return res.status(500).json({ error: 'Error al aprobar el pedido', details: error.message })
+  }
+})
+
+/**
+ * POST /api/pedidos/:id/rechazar
+ * Rechazar un pedido con motivo
+ */
+router.post('/:id/rechazar', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { motivo } = req.body
+    
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ error: 'El motivo de rechazo es requerido' })
+    }
+    
+    const conn = await pool.getConnection()
+    
+    try {
+      await conn.beginTransaction()
+      
+      // Verificar que el pedido existe
+      const [[pedido]] = await conn.query(
+        'SELECT id_estado_pedido FROM cabecera_pedidos WHERE id_pedido = ?',
+        [id]
+      )
+      
+      if (!pedido) {
+        await conn.rollback()
+        conn.release()
+        return res.status(404).json({ error: 'Pedido no encontrado' })
+      }
+      
+      // Obtener el ID del estado rechazado (soporta variantes)
+      const [[estadoRechazado]] = await conn.query(
+        "SELECT id_estado_pedido FROM estado_pedidos WHERE LOWER(descripcion) LIKE 'rechaz%' LIMIT 1"
+      )
+      
+      if (!estadoRechazado) {
+        await conn.rollback()
+        conn.release()
+        return res.status(500).json({ error: 'Estado "Rechazado" no encontrado en la BD' })
+      }
+      
+      // Actualizar estado del pedido.
+      // Nota: el motivo ya se valida en API; si luego existe una tabla de historial,
+      // se puede persistir ahi sin romper compatibilidad del esquema actual.
+      await conn.query(
+        `UPDATE cabecera_pedidos 
+         SET id_estado_pedido = ?
+         WHERE id_pedido = ?`,
+        [estadoRechazado.id_estado_pedido, id]
+      )
+      
+      await conn.commit()
+      conn.release()
+      
+      return res.json({ 
+        success: true, 
+        message: `Pedido #${id} rechazado correctamente` 
+      })
+      
+    } catch (error) {
+      await conn.rollback()
+      conn.release()
+      throw error
+    }
+  } catch (error) {
+    console.error('Error en POST /pedidos/:id/rechazar:', error)
+    return res.status(500).json({ error: 'Error al rechazar el pedido', details: error.message })
+  }
+})
+
 module.exports = router
