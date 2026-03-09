@@ -30,6 +30,21 @@ const ArrowRightIcon = () => (
   </svg>
 )
 
+const EyeIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px' }}>
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+)
+
+const EyeOffIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '20px', height: '20px', minWidth: '20px', minHeight: '20px' }}>
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+)
+
 export default function Login() {
   const { login, user } = useAuth()
   const navigate = useNavigate()
@@ -40,6 +55,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [deptAutoFilled, setDeptAutoFilled] = useState(false)
   const [getUserError, setGetUserError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
     if (user) navigate('/home', { replace: true })
@@ -80,6 +96,9 @@ export default function Login() {
     if (name === 'username') {
       setDeptAutoFilled(false)
       setGetUserError('')
+    }
+    if (name === 'password' && !value) {
+      setShowPassword(false)
     }
     setForm({ ...form, [name]: value })
     setError('')
@@ -156,13 +175,13 @@ export default function Login() {
             {/* Contraseña */}
             <div className="form-group">
               <label htmlFor="password">Contraseña</label>
-              <div className="input-wrapper">
+              <div className="input-wrapper" style={{ position: 'relative' }}>
                 <div className="input-icon">
                   <LockIcon />
                 </div>
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   name="password"
                   value={form.password}
                   onChange={handleChange}
@@ -171,6 +190,32 @@ export default function Login() {
                   autoComplete="current-password"
                   className="form-input"
                 />
+                {form.password && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#6b7280',
+                      transition: 'color 0.2s',
+                      padding: '4px',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = '#374151'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+                    title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  >
+                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                )}
               </div>
             </div>
 

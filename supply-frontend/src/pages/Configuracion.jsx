@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
+import { useDataRefresh } from '../context/DataRefreshContext'
 import api from '../api/axios'
 import Layout from '../components/Layout'
 import '../style/Configuracion.css'
@@ -11,6 +12,12 @@ const NAV_ITEMS = [
   { key: 'users', label: 'Usuarios' },
   { key: 'supplies', label: 'Suministros' },
   { key: 'roles', label: 'Roles y Permisos' },
+]
+
+const SUPPLIES_TABS = [
+  { key: 'supplies-list', label: 'Suministros' },
+  { key: 'pdv-providers', label: 'PDVs - Proveedores' },
+  { key: 'categories', label: 'Categorías' },
 ]
 
 const EMPTY_USER_FORM = {
@@ -31,6 +38,15 @@ const EMPTY_SUPPLY_FORM = {
   id_suministro_precio: '',
   id_proveedor: '',
   precio_compra: '',
+}
+
+const EMPTY_PDV_FORM = {
+  descripcion: '',
+  direccion: '',
+  id_grupo_pdv: '',
+  id_estado_pdv: '',
+  id_zona_comercial: '',
+  id_proveedor_principal: '',
 }
 
 // Iconos SVG
@@ -104,6 +120,7 @@ const SaveIcon = () => (
 export default function Configuracion() {
   const { user } = useAuth()
   const { isCollapsed } = useSidebar()
+  const { refreshPdvs, refreshSuministros } = useDataRefresh()
   const location = useLocation()
 
   // Leer sección activa desde el hash de la URL
@@ -112,6 +129,7 @@ export default function Configuracion() {
   const [navOpen, setNavOpen] = useState(true)
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
+  const [suppliesActiveTab, setSuppliesActiveTab] = useState('supplies-list')
 
   const [overview, setOverview] = useState(null)
   const [meta, setMeta] = useState({
@@ -120,6 +138,9 @@ export default function Configuracion() {
     categorias: [],
     estadosSuministro: [],
     proveedores: [],
+    zonasComerciales: [],
+    gruposPdvs: [],
+    estadosPdvs: [],
   })
 
   const [users, setUsers] = useState([])
@@ -135,6 +156,20 @@ export default function Configuracion() {
   const [supplyModalMode, setSupplyModalMode] = useState('create')
   const [supplyForm, setSupplyForm] = useState(EMPTY_SUPPLY_FORM)
   const [editingSupplyId, setEditingSupplyId] = useState(null)
+
+  const [pdvs, setPdvs] = useState([])
+  const [pdvFilters, setPdvFilters] = useState({ search: '', zone: '', provider: '' })
+  const [pdvModalOpen, setPdvModalOpen] = useState(false)
+  const [pdvModalMode, setPdvModalMode] = useState('create')
+  const [pdvForm, setPdvForm] = useState(EMPTY_PDV_FORM)
+  const [editingPdvId, setEditingPdvId] = useState(null)
+
+  const [categories, setCategories] = useState([])
+  const [categoryFilters, setCategoryFilters] = useState({ search: '' })
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false)
+  const [categoryModalMode, setCategoryModalMode] = useState('create')
+  const [categoryForm, setCategoryForm] = useState({ descripcion: '' })
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
 
   const [roles, setRoles] = useState([])
 
@@ -176,10 +211,26 @@ export default function Configuracion() {
     setRoles(res.data)
   }
 
+  const loadPdvs = async () => {
+    const params = {}
+    if (pdvFilters.search) params.search = pdvFilters.search
+    if (pdvFilters.zone) params.zone = pdvFilters.zone
+    if (pdvFilters.provider) params.provider = pdvFilters.provider
+    const res = await api.get('/admin/pdvs', { params })
+    setPdvs(res.data)
+  }
+
+  const loadCategories = async () => {
+    const params = {}
+    if (categoryFilters.search) params.search = categoryFilters.search
+    const res = await api.get('/admin/categories', { params })
+    setCategories(res.data)
+  }
+
   const loadAll = async () => {
     setLoading(true)
     try {
-      await Promise.all([loadOverview(), loadMeta(), loadUsers(), loadSupplies(), loadRoles()])
+      await Promise.all([loadOverview(), loadMeta(), loadUsers(), loadSupplies(), loadRoles(), loadPdvs(), loadCategories()])
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudo cargar el panel de configuración.', 'error')
     } finally {
@@ -198,6 +249,14 @@ export default function Configuracion() {
   useEffect(() => {
     if (!loading) loadSupplies()
   }, [supplyFilters.search, supplyFilters.category, supplyFilters.provider])
+
+  useEffect(() => {
+    if (!loading) loadPdvs()
+  }, [pdvFilters.search, pdvFilters.zone, pdvFilters.provider])
+
+  useEffect(() => {
+    if (!loading) loadCategories()
+  }, [categoryFilters.search])
 
   const lowStockCount = useMemo(() => supplies.filter(s => Number(s.stock) <= 10).length, [supplies])
 
@@ -299,6 +358,7 @@ export default function Configuracion() {
 
       setSupplyModalOpen(false)
       await Promise.all([loadSupplies(), loadOverview()])
+      refreshSuministros() // 🔄 Notificar a otras páginas que los suministros cambiaron
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudo guardar el suministro.', 'error')
     }
@@ -335,6 +395,102 @@ export default function Configuracion() {
       await loadRoles()
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudieron actualizar permisos.', 'error')
+    }
+  }
+
+  const openCreatePdv = () => {
+    setPdvModalMode('create')
+    setEditingPdvId(null)
+    setPdvForm(EMPTY_PDV_FORM)
+    setPdvModalOpen(true)
+  }
+
+  const openEditPdv = (pdv) => {
+    setPdvModalMode('edit')
+    setEditingPdvId(pdv.id_pdv)
+    setPdvForm({
+      descripcion: pdv.descripcion,
+      direccion: pdv.direccion || '',
+      id_grupo_pdv: pdv.id_grupo_pdv || '',
+      id_estado_pdv: pdv.id_estado_pdv || '',
+      id_zona_comercial: pdv.id_zona_comercial || '',
+      id_proveedor_principal: pdv.id_proveedor_principal || '',
+    })
+    setPdvModalOpen(true)
+  }
+
+  const cancelPdvModal = () => {
+    setEditingPdvId(null)
+    setPdvForm(EMPTY_PDV_FORM)
+    setPdvModalOpen(false)
+  }
+
+  const submitPdv = async (event) => {
+    event.preventDefault()
+    try {
+      if (pdvModalMode === 'create') {
+        await api.post('/admin/pdvs', pdvForm)
+        showToast('PDV creado correctamente.')
+      } else {
+        await api.put(`/admin/pdvs/${editingPdvId}`, {
+          id_proveedor_principal: pdvForm.id_proveedor_principal,
+          id_grupo_pdv: pdvForm.id_grupo_pdv
+        })
+        showToast('PDV actualizado correctamente.')
+      }
+
+      setPdvModalOpen(false)
+      setEditingPdvId(null)
+      setPdvForm(EMPTY_PDV_FORM)
+      await loadPdvs()
+      refreshPdvs() // 🔄 Notificar a otras páginas que los PDVs cambiaron
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo guardar el PDV.', 'error')
+    }
+  }
+
+  const openCreateCategory = () => {
+    setCategoryModalMode('create')
+    setEditingCategoryId(null)
+    setCategoryForm({ descripcion: '' })
+    setCategoryModalOpen(true)
+  }
+
+  const openEditCategory = (category) => {
+    setCategoryModalMode('edit')
+    setEditingCategoryId(category.id_tipo_suministro)
+    setCategoryForm({ descripcion: category.descripcion })
+    setCategoryModalOpen(true)
+  }
+
+  const submitCategory = async (event) => {
+    event.preventDefault()
+    try {
+      if (categoryModalMode === 'create') {
+        await api.post('/admin/categories', categoryForm)
+        showToast('Categoría creada correctamente.')
+      } else {
+        await api.put(`/admin/categories/${editingCategoryId}`, categoryForm)
+        showToast('Categoría actualizada correctamente.')
+      }
+
+      setCategoryModalOpen(false)
+      await Promise.all([loadCategories(), loadMeta()])
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo guardar la categoría.', 'error')
+    }
+  }
+
+  const deleteCategory = async (category) => {
+    const confirmed = window.confirm(`¿Eliminar la categoría "${category.descripcion}"?`)
+    if (!confirmed) return
+
+    try {
+      await api.delete(`/admin/categories/${category.id_tipo_suministro}`)
+      showToast('Categoría eliminada correctamente.')
+      await Promise.all([loadCategories(), loadMeta()])
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo eliminar la categoría.', 'error')
     }
   }
 
@@ -457,78 +613,208 @@ export default function Configuracion() {
                   <div className="admin-panel-card">
                     <div className="admin-panel-header">
                       <h2>Gestión de Suministros</h2>
-                      <button type="button" className="admin-primary icon-btn-with-text" onClick={openCreateSupply} title="Nuevo Suministro"><PlusIcon /> <span>Nuevo Suministro</span></button>
+                      {suppliesActiveTab === 'supplies-list' && (
+                        <button type="button" className="admin-primary icon-btn-with-text" onClick={openCreateSupply} title="Nuevo Suministro"><PlusIcon /> <span>Nuevo Suministro</span></button>
+                      )}
+                      {suppliesActiveTab === 'pdv-providers' && (
+                        <button type="button" className="admin-primary icon-btn-with-text" onClick={openCreatePdv} title="Nuevo PDV"><PlusIcon /> <span>Nuevo PDV</span></button>
+                      )}
+                      {suppliesActiveTab === 'categories' && (
+                        <button type="button" className="admin-primary icon-btn-with-text" onClick={openCreateCategory} title="Nueva Categoría"><PlusIcon /> <span>Nueva Categoría</span></button>
+                      )}
                     </div>
 
-                    <div className="admin-filters admin-filters-supplies">
-                      <input
-                        type="text"
-                        placeholder="Buscar suministro..."
-                        value={supplyFilters.search}
-                        onChange={(event) => setSupplyFilters((prev) => ({ ...prev, search: event.target.value }))}
-                      />
-                      <select
-                        value={supplyFilters.category}
-                        onChange={(event) => setSupplyFilters((prev) => ({ ...prev, category: event.target.value }))}
-                      >
-                        <option value="">Todas las categorías</option>
-                        {meta.categorias.map((category) => (
-                          <option key={category.id_tipo_suministro} value={category.id_tipo_suministro}>
-                            {category.descripcion}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={supplyFilters.provider}
-                        onChange={(event) => setSupplyFilters((prev) => ({ ...prev, provider: event.target.value }))}
-                      >
-                        <option value="">Todos los proveedores</option>
-                        {meta.proveedores.map((provider) => (
-                          <option key={provider.id_proveedor} value={provider.id_proveedor}>
-                            {provider.nombre_proveedor}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="stock-pill">Stock bajo: {lowStockCount}</div>
+                    {/* Sub-tabs para Suministros */}
+                    <div className="admin-subtabs">
+                      {SUPPLIES_TABS.map((tab) => (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          className={`admin-subtab ${suppliesActiveTab === tab.key ? 'active' : ''}`}
+                          onClick={() => setSuppliesActiveTab(tab.key)}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
 
-                    <div className="admin-table-wrap">
-                      <table className="admin-table">
-                        <thead>
-                          <tr>
-                            <th>Nombre</th>
-                            <th>Categoría</th>
-                            <th>Proveedor</th>
-                            <th>Precio</th>
-                            <th>Stock</th>
-                            <th>Estado</th>
-                            <th>Fecha de actualización</th>
-                            <th>Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {supplies.map((item) => (
-                            <tr key={`${item.id_suministro}-${item.id_suministro_precio || item.id_proveedor || 'sin-proveedor'}`}>
-                              <td data-label="Nombre">{item.descripcion}</td>
-                              <td data-label="Categoría">{item.categoria}</td>
-                              <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
-                              <td data-label="Precio">{item.precio_compra !== null && item.precio_compra !== undefined ? Number(item.precio_compra).toFixed(2) : '-'}</td>
-                              <td data-label="Stock">
-                                <span className={Number(item.stock) <= 10 ? 'low-stock' : ''}>
-                                  {item.stock}
-                                </span>
-                              </td>
-                              <td data-label="Estado">{item.estado}</td>
-                              <td data-label="Actualización">{item.fecha_actualizacion}</td>
-                              <td data-label="Acciones" className="actions-cell">
-                                <button type="button" className="icon-btn" onClick={() => openEditSupply(item)} title="Editar"><EditIcon /></button>
-                                <button type="button" className="danger icon-btn" onClick={() => deleteSupply(item)} title="Eliminar"><TrashIcon /></button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {/* Contenido: Lista de Suministros */}
+                    {suppliesActiveTab === 'supplies-list' && (
+                      <>
+                        <div className="admin-filters admin-filters-supplies">
+                          <input
+                            type="text"
+                            placeholder="Buscar suministro..."
+                            value={supplyFilters.search}
+                            onChange={(event) => setSupplyFilters((prev) => ({ ...prev, search: event.target.value }))}
+                          />
+                          <select
+                            value={supplyFilters.category}
+                            onChange={(event) => setSupplyFilters((prev) => ({ ...prev, category: event.target.value }))}
+                          >
+                            <option value="">Todas las categorías</option>
+                            {meta.categorias.map((category) => (
+                              <option key={category.id_tipo_suministro} value={category.id_tipo_suministro}>
+                                {category.descripcion}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={supplyFilters.provider}
+                            onChange={(event) => setSupplyFilters((prev) => ({ ...prev, provider: event.target.value }))}
+                          >
+                            <option value="">Todos los proveedores</option>
+                            {meta.proveedores.map((provider) => (
+                              <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                                {provider.nombre_proveedor}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="stock-pill">Stock bajo: {lowStockCount}</div>
+                        </div>
+
+                        <div className="admin-table-wrap">
+                          <table className="admin-table">
+                            <thead>
+                              <tr>
+                                <th>Nombre</th>
+                                <th>Categoría</th>
+                                <th>Proveedor</th>
+                                <th>Precio</th>
+                                <th>Stock</th>
+                                <th>Estado</th>
+                                <th>Fecha de actualización</th>
+                                <th>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {supplies.map((item) => (
+                                <tr key={`${item.id_suministro}-${item.id_suministro_precio || item.id_proveedor || 'sin-proveedor'}`}>
+                                  <td data-label="Nombre">{item.descripcion}</td>
+                                  <td data-label="Categoría">{item.categoria}</td>
+                                  <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
+                                  <td data-label="Precio">{item.precio_compra !== null && item.precio_compra !== undefined ? Number(item.precio_compra).toFixed(2) : '-'}</td>
+                                  <td data-label="Stock">
+                                    <span className={Number(item.stock) <= 10 ? 'low-stock' : ''}>
+                                      {item.stock}
+                                    </span>
+                                  </td>
+                                  <td data-label="Estado">{item.estado}</td>
+                                  <td data-label="Actualización">{item.fecha_actualizacion}</td>
+                                  <td data-label="Acciones" className="actions-cell">
+                                    <button type="button" className="icon-btn" onClick={() => openEditSupply(item)} title="Editar"><EditIcon /></button>
+                                    <button type="button" className="danger icon-btn" onClick={() => deleteSupply(item)} title="Eliminar"><TrashIcon /></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Contenido: PDVs - Proveedores */}
+                    {suppliesActiveTab === 'pdv-providers' && (
+                      <>
+                        <div className="admin-filters">
+                          <input
+                            type="text"
+                            placeholder="Buscar PDV..."
+                            value={pdvFilters.search}
+                            onChange={(event) => setPdvFilters((prev) => ({ ...prev, search: event.target.value }))}
+                          />
+                          <select
+                            value={pdvFilters.zone}
+                            onChange={(event) => setPdvFilters((prev) => ({ ...prev, zone: event.target.value }))}
+                          >
+                            <option value="">Todas las zonas</option>
+                            {meta.zonasComerciales.map((zone) => (
+                              <option key={zone.id_zona_comercial} value={zone.id_zona_comercial}>
+                                {zone.zona}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={pdvFilters.provider}
+                            onChange={(event) => setPdvFilters((prev) => ({ ...prev, provider: event.target.value }))}
+                          >
+                            <option value="">Todos los proveedores</option>
+                            {meta.proveedores.map((provider) => (
+                              <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                                {provider.nombre_proveedor}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="admin-table-wrap">
+                          <table className="admin-table">
+                            <thead>
+                              <tr>
+                                <th>PDV</th>
+                                <th>Zona Comercial</th>
+                                <th>Monto Autorizado</th>
+                                <th>Estado</th>
+                                <th>Proveedor Principal</th>
+                                <th>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pdvs.map((item) => (
+                                <tr key={item.id_pdv}>
+                                  <td data-label="PDV">{item.descripcion}</td>
+                                  <td data-label="Zona">{item.zona_comercial}</td>
+                                  <td data-label="Monto Autorizado">${Number(item.monto_autorizado || 0).toFixed(2)}</td>
+                                  <td data-label="Estado">{item.estado}</td>
+                                  <td data-label="Proveedor">{item.proveedor}</td>
+                                  <td data-label="Acciones" className="actions-cell">
+                                    <button type="button" className="icon-btn" onClick={() => openEditPdv(item)} title="Editar PDV"><EditIcon /></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Contenido: Categorías */}
+                    {suppliesActiveTab === 'categories' && (
+                      <>
+                        <div className="admin-filters">
+                          <input
+                            type="text"
+                            placeholder="Buscar categoría..."
+                            value={categoryFilters.search}
+                            onChange={(event) => setCategoryFilters((prev) => ({ ...prev, search: event.target.value }))}
+                          />
+                        </div>
+
+                        <div className="admin-table-wrap">
+                          <table className="admin-table">
+                            <thead>
+                              <tr>
+                                <th>Nombre</th>
+                                <th>Total de Suministros</th>
+                                <th>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {categories.map((item) => (
+                                <tr key={item.id_tipo_suministro}>
+                                  <td data-label="Nombre">{item.descripcion}</td>
+                                  <td data-label="Suministros">{item.total_suministros}</td>
+                                  <td data-label="Acciones" className="actions-cell">
+                                    <button type="button" className="icon-btn" onClick={() => openEditCategory(item)} title="Editar"><EditIcon /></button>
+                                    <button type="button" className="danger icon-btn" onClick={() => deleteCategory(item)} title="Eliminar"><TrashIcon /></button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -633,6 +919,158 @@ export default function Configuracion() {
               </select>
               <div className="admin-modal-actions">
                 <button type="button" className="admin-secondary icon-btn-with-text" onClick={() => setSupplyModalOpen(false)}><XIcon /> <span>Cancelar</span></button>
+                <button type="submit" className="admin-primary icon-btn-with-text"><CheckIcon /> <span>Guardar</span></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {pdvModalOpen && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal admin-modal-pdv">
+            <div className="admin-modal-header">
+              <h3>{pdvModalMode === 'create' ? 'Crear Nuevo PDV' : 'Editar PDV'}</h3>
+              <p>{pdvModalMode === 'create' ? 'Registra un nuevo punto de venta' : 'Actualiza el proveedor y presupuesto del PDV'}</p>
+            </div>
+            
+            <form onSubmit={submitPdv} className="admin-form-grid">
+              {pdvModalMode === 'create' && (
+                <>
+                  <div className="admin-modal-field">
+                    <label className="admin-modal-label">
+                      Nombre del PDV
+                    </label>
+                    <input
+                      type="text"
+                      value={pdvForm.descripcion}
+                      onChange={(e) => setPdvForm((prev) => ({ ...prev, descripcion: e.target.value }))}
+                      className="admin-modal-select"
+                      placeholder="Ej: FC999"
+                      required
+                    />
+                  </div>
+
+                  <div className="admin-modal-field">
+                    <label className="admin-modal-label">
+                      Dirección
+                    </label>
+                    <input
+                      type="text"
+                      value={pdvForm.direccion}
+                      onChange={(e) => setPdvForm((prev) => ({ ...prev, direccion: e.target.value }))}
+                      className="admin-modal-select"
+                      placeholder="Dirección completa"
+                    />
+                  </div>
+
+                  <div className="admin-modal-field">
+                    <label className="admin-modal-label">
+                      Zona Comercial
+                    </label>
+                    <select 
+                      value={pdvForm.id_zona_comercial} 
+                      onChange={(e) => setPdvForm((prev) => ({ ...prev, id_zona_comercial: e.target.value }))}
+                      className="admin-modal-select"
+                      required
+                    >
+                      <option value="">Selecciona una zona</option>
+                      {meta.zonasComerciales.map((zone) => (
+                        <option key={zone.id_zona_comercial} value={zone.id_zona_comercial}>
+                          {zone.zona}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="admin-modal-field">
+                    <label className="admin-modal-label">
+                      Estado
+                    </label>
+                    <select 
+                      value={pdvForm.id_estado_pdv} 
+                      onChange={(e) => setPdvForm((prev) => ({ ...prev, id_estado_pdv: e.target.value }))}
+                      className="admin-modal-select"
+                      required
+                    >
+                      <option value="">Selecciona un estado</option>
+                      {meta.estadosPdvs.map((estado) => (
+                        <option key={estado.id_estado_pdv} value={estado.id_estado_pdv}>
+                          {estado.descripcion}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="admin-modal-field">
+                <label className="admin-modal-label">
+                  Grupo PDV (Monto Autorizado)
+                </label>
+                <select 
+                  value={pdvForm.id_grupo_pdv} 
+                  onChange={(e) => setPdvForm((prev) => ({ ...prev, id_grupo_pdv: e.target.value }))}
+                  className="admin-modal-select"
+                  required
+                >
+                  <option value="">Selecciona un grupo</option>
+                  {meta.gruposPdvs.map((grupo) => (
+                    <option key={grupo.id_grupo_pdv} value={grupo.id_grupo_pdv}>
+                      {grupo.descripcion} - ${Number(grupo.monto_autorizado).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+                <p className="admin-modal-hint">El monto autorizado determina el límite de pedidos</p>
+              </div>
+              
+              <div className="admin-modal-field">
+                <label className="admin-modal-label">
+                  Proveedor Principal
+                </label>
+                <select 
+                  value={pdvForm.id_proveedor_principal} 
+                  onChange={(e) => setPdvForm((prev) => ({ ...prev, id_proveedor_principal: e.target.value }))}
+                  className="admin-modal-select"
+                >
+                  <option value="">Sin proveedor asignado</option>
+                  {meta.proveedores.map((provider) => (
+                    <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                      {provider.nombre_proveedor}
+                    </option>
+                  ))}
+                </select>
+                <p className="admin-modal-hint">El proveedor principal será el preferido para este PDV</p>
+              </div>
+
+              <div className="admin-modal-actions">
+                <button type="button" className="admin-secondary icon-btn-with-text" onClick={cancelPdvModal}>
+                  <XIcon /> <span>Cancelar</span>
+                </button>
+                <button type="submit" className="admin-primary icon-btn-with-text">
+                  <CheckIcon /> <span>{pdvModalMode === 'create' ? 'Crear PDV' : 'Guardar Cambios'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {categoryModalOpen && (
+        <div className="admin-modal-overlay">
+          <div className="admin-modal">
+            <h3>{categoryModalMode === 'create' ? 'Crear Categoría' : 'Editar Categoría'}</h3>
+            <form onSubmit={submitCategory} className="admin-form-grid">
+              <input
+                type="text"
+                placeholder="Nombre de la categoría"
+                value={categoryForm.descripcion}
+                onChange={(e) => setCategoryForm((prev) => ({ ...prev, descripcion: e.target.value }))}
+                required
+                style={{ gridColumn: '1 / -1' }}
+              />
+              <div className="admin-modal-actions">
+                <button type="button" className="admin-secondary icon-btn-with-text" onClick={() => setCategoryModalOpen(false)}><XIcon /> <span>Cancelar</span></button>
                 <button type="submit" className="admin-primary icon-btn-with-text"><CheckIcon /> <span>Guardar</span></button>
               </div>
             </form>

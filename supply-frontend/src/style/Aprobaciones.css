@@ -119,6 +119,43 @@
   white-space: nowrap;
 }
 
+.btn-refresh-filters {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh-filters:hover:not(:disabled) {
+  background: #eef2f7;
+  border-color: #9ca3af;
+}
+
+.btn-refresh-filters:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.refresh-spin {
+  animation: refresh-spin 0.9s linear infinite;
+}
+
+@keyframes refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .filter-action-btn {
   min-width: 92px;
 }
@@ -184,9 +221,14 @@
 }
 
 .td-actions {
+  text-align: center;
+}
+
+.td-actions {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  justify-content: center;
 }
 
 /* Badges */

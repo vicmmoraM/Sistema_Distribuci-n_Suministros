@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
+import { useDataRefresh } from '../context/DataRefreshContext'
 import api from '../api/axios'
 import Layout from '../components/Layout'
 import '../style/Reportes.css'
@@ -24,6 +25,9 @@ const CAMPOS_EXPORTACION = [
   { id: 'usuarioNombre', label: 'Usuario (Nombre)', checked: true },
   { id: 'usuarioLogin', label: 'Usuario (Login)', checked: false },
   { id: 'departamento', label: 'Departamento', checked: true },
+  { id: 'ciudad', label: 'Ciudad', checked: true },
+  { id: 'region', label: 'Region', checked: true },
+  { id: 'supervisor', label: 'Supervisor', checked: true },
   { id: 'estado', label: 'Estado', checked: true },
   { id: 'tipoSuministro', label: 'Tipo Suministro', checked: true },
   { id: 'suministro', label: 'Suministro', checked: true },
@@ -82,6 +86,7 @@ function agruparPorPedido(rows) {
 export default function Reportes() {
   const { loading: authLoading } = useAuth()
   const { isCollapsed } = useSidebar()
+  const { refreshTriggers } = useDataRefresh()
 
   const anioActual = new Date().getFullYear()
   const mesActual  = new Date().getMonth() + 1
@@ -135,6 +140,13 @@ export default function Reportes() {
   useEffect(() => {
     if (!authLoading) cargarPedidos(1)
   }, [authLoading, cargarPedidos])
+
+  // 🔄 Escuchar cambios cuando se actualizan datos en Configuración
+  useEffect(() => {
+    if (!authLoading && !cargando) {
+      cargarPedidos(1)
+    }
+  }, [refreshTriggers.pdvs, refreshTriggers.reportes])
 
   function handleFiltroChange(e) {
     const { name, value } = e.target
@@ -228,7 +240,7 @@ export default function Reportes() {
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="rep-header">
           <div className="rep-header__left">
-            <h1 className="rep-title">Reportes de Pedidos</h1>
+            <h1 className="rep-title">Reportes de Suministros</h1>
             <p className="rep-subtitle">
               {paginacion.total > 0
                 ? `${paginacion.total} pedido${paginacion.total !== 1 ? 's' : ''} encontrado${paginacion.total !== 1 ? 's' : ''}`

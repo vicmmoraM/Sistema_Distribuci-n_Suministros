@@ -56,8 +56,8 @@ function buildWhere(query, params) {
   }
 
   if (query.usuario) {
-    conditions.push('u.login = ?')
-    params.push(query.usuario)
+    conditions.push('u.login LIKE ?')
+    params.push(`%${query.usuario}%`)
   }
 
   return conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
@@ -75,6 +75,9 @@ const BASE_SELECT = `
     u.nombres                         AS usuarioNombre,
     COALESCE(d.descripcion, 'Sin departamento') AS departamento,
     COALESCE(p.descripcion, 'N/A')    AS pdvNombre,
+    CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(c.descripcion, '') ELSE '' END AS ciudad,
+    CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(r.descripcion, '') ELSE '' END AS region,
+    CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(sup.nombres, '') ELSE '' END AS supervisor,
     COALESCE(zc.codigo_zona, '') AS codigoZona,
     e.descripcion                     AS estado,
     ts.descripcion                    AS tipoSuministro,
@@ -82,11 +85,16 @@ const BASE_SELECT = `
     COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
     dp.cantidad,
     dp.precio_unitario AS precioUnitario,
-    (dp.cantidad * dp.precio_unitario) AS subtotal
+    (dp.cantidad * dp.precio_unitario) AS subtotal,
+    cp.observaciones_aprobacion AS observacionesAprobacion,
+    cp.motivo_rechazo AS motivoRechazo
   FROM cabecera_pedidos cp
   INNER JOIN usuarios u          ON cp.id_usuario       = u.id_usuario
   LEFT JOIN departamentos d      ON u.id_departamento   = d.id_departamento
   LEFT JOIN pdvs p               ON cp.id_pdv           = p.id_pdv
+  LEFT JOIN ciudades c           ON p.id_ciudad         = c.id_ciudad
+  LEFT JOIN regiones r           ON c.id_region         = r.id_region
+  LEFT JOIN supervisores sup     ON p.id_supervisor     = sup.id_supervisor
   LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
   INNER JOIN estado_pedidos e    ON cp.id_estado_pedido = e.id_estado_pedido
   INNER JOIN detalle_pedidos dp  ON dp.id_pedido        = cp.id_pedido
@@ -103,10 +111,12 @@ const ORDER_BY = `ORDER BY cp.fecha_registro DESC, cp.id_pedido DESC, ts.descrip
 const CAMPOS_CONFIG = {
   pedidoId:        { header: 'Pedido #',        width: 10,  format: '@' },
   fecha:           { header: 'Fecha',           width: 14,  format: 'mm/dd/yyyy' },
-  usuarioLogin:    { header: 'Usuario (Login)', width: 18,  format: '@' },
+  region:          { header: 'Region',          width: 18,  format: '@' },
   usuarioNombre:   { header: 'Usuario',         width: 26,  format: '@' },
   departamento:    { header: 'Departamento',    width: 26,  format: '@' },
   pdvNombre:       { header: 'PDV',             width: 20,  format: '@' },
+  ciudad:          { header: 'Ciudad',          width: 20,  format: '@' },
+  supervisor:      { header: 'Supervisor',      width: 24,  format: '@' },
   codigoZona:      { header: 'Código Zona',     width: 14,  format: '@' },
   estado:          { header: 'Estado',          width: 14,  format: '@' },
   tipoSuministro:  { header: 'Tipo Suministro', width: 20,  format: '@' },
@@ -344,6 +354,9 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
       'usuarioNombre',
       'departamento',
       'pdvNombre',
+      'ciudad',
+      'region',
+      'supervisor',
       'codigoZona',
       'estado',
     ])
@@ -436,7 +449,7 @@ router.get('/pedidos/excel', requireAuth, async (req, res) => {
           cell.value = new Date(row.fecha)
         } else if (col.key === 'cantidad' || col.key === 'precioUnitario' || col.key === 'subtotal') {
           cell.value = Number(row[col.key])
-        } else if (isPedidoNuevo || !['pedidoId', 'fecha', 'usuarioNombre', 'usuarioLogin', 'departamento', 'pdvNombre', 'codigoZona', 'estado'].includes(col.key)) {
+        } else if (isPedidoNuevo || !['pedidoId', 'fecha', 'usuarioNombre', 'usuarioLogin', 'departamento', 'pdvNombre', 'ciudad', 'region', 'supervisor', 'codigoZona', 'estado'].includes(col.key)) {
           cell.value = row[col.key]
         }
 

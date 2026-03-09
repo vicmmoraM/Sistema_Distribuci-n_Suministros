@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
+import { useDataRefresh } from '../context/DataRefreshContext'
 import { usePermissions } from '../hooks/usePermissions'
 import api from '../api/axios'
 import Layout from '../components/Layout'
@@ -9,7 +10,7 @@ import '../style/Home.css'
 
 const ESTADO_BADGE = {
   'Pendiente': 'badge--pendiente',
-  'Aprobado':  'badge--aprobado',
+  'Aprobado': 'badge--aprobado',
   'Rechazado': 'badge--rechazado',
   'Entregado': 'badge--entregado',
   'En espera': 'badge--pendiente',
@@ -18,17 +19,18 @@ const ESTADO_BADGE = {
 export default function Home() {
   const { user, loading } = useAuth()
   const { isCollapsed } = useSidebar()
+  const { refreshTriggers } = useDataRefresh()
   const { esComercial } = usePermissions()
   const navigate = useNavigate()
   const { hash } = useLocation()
 
   // Determinar vista según el hash
   const vistaActual = hash === '#mis-pedidos' ? 'mis-pedidos' : 'nuevo-pedido'
-
   // Estados para "Mis Pedidos"
   const [vistaPedidos, setVistaPedidos] = useState('todos') // todos, pendientes, aprobados, rechazados
   const [pedidos, setPedidos] = useState([])
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null)
+  const [showDetailModal, setShowDetailModal] = useState(false)
   const [cargandoPedidos, setCargandoPedidos] = useState(false)
   const [filtroTexto, setFiltroTexto] = useState('')
   const [filtroFechaDesde, setFiltroFechaDesde] = useState('')
@@ -55,7 +57,7 @@ export default function Home() {
   // UI
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
-  
+
 
   const tiposSuministroUnicos = Array.from(
     new Map(tiposSuministro.map(t => [t.descripcion, t])).values()
@@ -75,12 +77,12 @@ export default function Home() {
             setPdv(pdvDelUsuario)
           }
         }
-      }).catch(() => {})
+      }).catch(() => { })
     } else {
       setPdvs([])
       setPdv(null)
     }
-    api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => {})
+    api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => { })
   }, [loading, user?.login, esComercial])
 
   // Cargar suministros cuando cambia el tipo
@@ -98,12 +100,36 @@ export default function Home() {
         setSuministros(r.data)
         setSuministroId('')
         setSuministroSearch('')
-          setShowSuministroDropdown(false)
+        setShowSuministroDropdown(false)
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [tipoSeleccionado, pdvSeleccionado?.id_pdv])
 
-        const getSuministroLabel = (s) => `${s.descripcion} - $${Number(s.precio).toFixed(2)} `
+  // 🔄 Recargar PDVs cuando se actualicen en Configuración
+  useEffect(() => {
+    if (loading || !esComercial) return
+    api.get('/catalogos/pdvs').then(r => {
+      setPdvs(r.data)
+      // Si había un PDV seleccionado, actualizar sus datos
+      if (pdvSeleccionado) {
+        const pdvActualizado = r.data.find(p => p.id_pdv === pdvSeleccionado.id_pdv)
+        if (pdvActualizado) {
+          setPdv(pdvActualizado)
+        }
+      }
+    }).catch(() => { })
+  }, [refreshTriggers.pdvs])
+
+  // 🔄 Recargar suministros cuando se actualicen en Configuración
+  useEffect(() => {
+    if (!tipoSeleccionado || loading) return
+    const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
+    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`)
+      .then(r => setSuministros(r.data))
+      .catch(() => { })
+  }, [refreshTriggers.suministros])
+
+  const getSuministroLabel = (s) => `${s.descripcion} - $${Number(s.precio).toFixed(2)} `
 
   const suministroSearchTerm = suministroSearch.trim().toLowerCase()
   const suministrosFiltrados = suministroSearchTerm
@@ -114,9 +140,9 @@ export default function Home() {
     : suministros
 
   // Totales
-  const subtotalOficina  = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
+  const subtotalOficina = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
   const subtotalLimpieza = carrito.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
-  const totalPedido      = carrito.reduce((s, i) => s + i.total, 0)
+  const totalPedido = carrito.reduce((s, i) => s + i.total, 0)
   const limiteDisponible = esComercial
     ? Number(pdvSeleccionado?.cupo || 0)
     : Number(user?.departmentBudget || 0)
@@ -124,19 +150,19 @@ export default function Home() {
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
-    const sum  = suministros.find(s => s.id_suministro === Number(suministroId))
+    const sum = suministros.find(s => s.id_suministro === Number(suministroId))
     const tipo = tiposSuministro.find(t => t.id_tipo_suministro === Number(tipoSeleccionado))
     if (!sum) return
 
     setCarrito(prev => [...prev, {
       id: Date.now(),
-      suministroId:     sum.id_suministro,
+      suministroId: sum.id_suministro,
       suministroNombre: sum.descripcion,
-      tipoId:           tipo.id_tipo_suministro,
-      tipoNombre:       tipo.descripcion,
-      cantidad:         Number(cantidad),
-      precioUnitario:   Number(sum.precio),
-      total:            Number(cantidad) * Number(sum.precio),
+      tipoId: tipo.id_tipo_suministro,
+      tipoNombre: tipo.descripcion,
+      cantidad: Number(cantidad),
+      precioUnitario: Number(sum.precio),
+      total: Number(cantidad) * Number(sum.precio),
     }])
     setSuministroId('')
     setSuministroSearch('')
@@ -185,9 +211,9 @@ export default function Home() {
       if (vistaPedidos === 'pendientes') params.estado = 1
       if (vistaPedidos === 'aprobados') params.estado = 2
       if (vistaPedidos === 'rechazados') params.estado = 3
-      
+
       const { data } = await api.get('/reportes/pedidos', { params })
-      
+
       // Agrupar por pedidoId
       const pedidosMap = new Map()
       data.data.forEach(row => {
@@ -198,6 +224,8 @@ export default function Home() {
             fecha: new Date(`${row.fecha}T00:00:00`).toLocaleDateString('es-EC'),
             fechaISO: row.fecha,
             estado: row.estado,
+            observacionesAprobacion: row.observacionesAprobacion || null,
+            motivoRechazo: row.motivoRechazo || null,
             items: [],
             total: 0,
           })
@@ -211,7 +239,7 @@ export default function Home() {
         })
         pedido.total += Number(row.precioUnitario) * Number(row.cantidad)
       })
-      
+
       setPedidos(Array.from(pedidosMap.values()))
     } catch (err) {
       console.error('Error cargando pedidos:', err)
@@ -271,9 +299,9 @@ export default function Home() {
             <section className="section-card">
               <h2 className="section-header section-header--with-logo">
                 <span>{esComercial ? 'Punto de venta' : 'Departamento'}</span>
-                <img 
-                  src="/images/LOGO OFICIAL FC COMPLETO FONDO TRANSPARENTE.png" 
-                  alt="Logo Fundación Crisfe" 
+                <img
+                  src="/images/LOGO OFICIAL FC COMPLETO FONDO TRANSPARENTE.png"
+                  alt="Logo Fundación Crisfe"
                   className="home-logo"
                 />
               </h2>
@@ -467,9 +495,10 @@ export default function Home() {
 
         {vistaActual === 'mis-pedidos' && (
           <div className="mispedidos-wrapper-home">
+            {/* Barra superior con filtros */}
             <div className="mispedidos-topbar">
               <div className="mispedidos-topbar__title">
-                <h2>Mis Pedidos</h2>
+                <h2>Mis Suministros</h2>
               </div>
 
               <div className="mispedidos-filters-inline">
@@ -481,25 +510,57 @@ export default function Home() {
                   onChange={e => setFiltroTexto(e.target.value)}
                 />
 
+                <input
+                  type="date"
+                  className="mispedidos-filter-input"
+                  value={filtroFechaDesde}
+                  onChange={e => setFiltroFechaDesde(e.target.value)}
+                  title="Fecha desde"
+                />
+
+                <input
+                  type="date"
+                  className="mispedidos-filter-input"
+                  value={filtroFechaHasta}
+                  onChange={e => setFiltroFechaHasta(e.target.value)}
+                  title="Fecha hasta"
+                />
+
+                <input
+                  type="number"
+                  className="mispedidos-filter-input"
+                  placeholder="Monto mín."
+                  value={filtroMontoMin}
+                  onChange={e => setFiltroMontoMin(e.target.value)}
+                />
+
+                <input
+                  type="number"
+                  className="mispedidos-filter-input"
+                  placeholder="Monto máx."
+                  value={filtroMontoMax}
+                  onChange={e => setFiltroMontoMax(e.target.value)}
+                />
+
                 <select
                   className="mispedidos-filter-input"
                   value={vistaPedidos}
                   onChange={e => { setVistaPedidos(e.target.value); setPedidoSeleccionado(null) }}
                 >
-                  <option value="todos">Todos los estados</option>
+                  <option value="todos">Todos</option>
                   <option value="pendientes">Pendientes</option>
                   <option value="aprobados">Aprobados</option>
                   <option value="rechazados">Rechazados</option>
                 </select>
 
                 <button className="mispedidos-filter-clear" onClick={limpiarFiltrosPedidos}>
-                  Limpiar filtros
+                  Limpiar
                 </button>
               </div>
             </div>
 
-            {/* Contenido Principal - Grid de pedidos */}
-            <div className="mispedidos-content-home">
+            {/* Contenido Principal - Tabla de pedidos */}
+            <div className="mispedidos-table-container">
               {cargandoPedidos ? (
                 <div className="mispedidos-loading">
                   <div className="mispedidos-loading__spinner"></div>
@@ -508,62 +569,115 @@ export default function Home() {
               ) : pedidosFiltrados.length === 0 ? (
                 <div className="mispedidos-empty">
                   <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2"/>
-                    <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2"/>
+                    <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" />
+                    <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" />
                   </svg>
                   <h3>No hay pedidos</h3>
                   <p>No tienes pedidos registrados.</p>
                 </div>
               ) : (
-                <div className="mispedidos-grid">
-                  {pedidosFiltrados.map(pedido => (
-                    <div 
-                      key={pedido.pedidoId} 
-                      className={`pedido-card ${pedidoSeleccionado?.pedidoId === pedido.pedidoId ? 'active' : ''}`}>
-                      
-                      <div className="pedido-card__header">
-                        <div className="pedido-card__info">
-                          <span className="pedido-card__numero">Pedido #{pedido.pedidoId}</span>
-                          <span className="pedido-card__fecha">{pedido.fecha}</span>
-                        </div>
-                        <span className={`mispedidos-badge ${ESTADO_BADGE[pedido.estado] || ''}`}>
-                          {pedido.estado}
-                        </span>
-                      </div>
+                <>
+                  <table className="mispedidos-table">
+                    <thead>
+                      <tr>
+                        <th>ID Pedido</th>
+                        <th>Fecha</th>
+                        <th>Artículos</th>
+                        <th>Total</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pedidosFiltrados.map(pedido => (
+                        <tr key={pedido.pedidoId} className={pedidoSeleccionado?.pedidoId === pedido.pedidoId ? 'active' : ''}>
+                          <td className="td-id">#{pedido.pedidoId}</td>
+                          <td>{pedido.fecha}</td>
+                          <td className="td-items">{pedido.items.length}</td>
+                          <td className="td-total">${pedido.total.toFixed(2)}</td>
+                          <td>
+                            <span className={`mispedidos-badge ${ESTADO_BADGE[pedido.estado] || ''}`}>
+                              {pedido.estado}
+                            </span>
+                          </td>
+                          <td className="td-actions">
+                            <button
+                              className="mispedidos-btn-view"
+                              title="Ver detalles"
+                              onClick={() => {
+                                setPedidoSeleccionado(pedido)
+                                setShowDetailModal(true)
+                              }}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
 
-                      <div className="pedido-card__body">
-                        <div className="pedido-card__detalle">
-                          <span className="label">Total:</span>
-                          <span className="value">${pedido.total.toFixed(2)}</span>
-                        </div>
-                        <div className="pedido-card__detalle">
-                          <span className="label">Artículos:</span>
-                          <span className="value">{pedido.items.length}</span>
-                        </div>
-                      </div>
 
-                      <button 
-                        className="pedido-card__toggle"
-                        onClick={() => setPedidoSeleccionado(
-                          pedidoSeleccionado?.pedidoId === pedido.pedidoId ? null : pedido
-                        )}>
-                        {pedidoSeleccionado?.pedidoId === pedido.pedidoId ? 'Ocultar detalles' : 'Ver detalles'}
-                      </button>
+                  {/* Modal de Detalles */}
+                  {showDetailModal && pedidoSeleccionado && (
+                    <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
+                      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                          <h2>Detalle del Pedido #{pedidoSeleccionado.pedidoId}</h2>
+                          <button onClick={() => setShowDetailModal(false)} className="btn-close">×</button>
+                        </div>
+                        <div className="modal-body">
+                          <div className="pedido-info">
+                            <div className="info-row">
+                              <strong>Fecha:</strong> {pedidoSeleccionado.fecha}
+                            </div>
+                            <div className="info-row">
+                              <strong>Estado:</strong>
+                              <span className={`mispedidos-badge ${ESTADO_BADGE[pedidoSeleccionado.estado] || ''}`}>
+                                {pedidoSeleccionado.estado}
+                              </span>
+                            </div>
+                            <div className="info-row">
+                              <strong>Total:</strong> ${pedidoSeleccionado.total.toFixed(2)}
+                            </div>
+                            
+                            {/* Mostrar observaciones si fue aprobado */}
+                            {pedidoSeleccionado.estado === 'Aprobado' && pedidoSeleccionado.observacionesAprobacion && (
+                              <div className="info-row" style={{ marginTop: '1rem', padding: '0.75rem', background: '#f0fdf4', borderLeft: '3px solid #10b981', borderRadius: '0.375rem' }}>
+                                <strong style={{ color: '#059669' }}>Observaciones de aprobación:</strong>
+                                <p style={{ margin: '0.5rem 0 0 0', color: '#065f46', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                                  {pedidoSeleccionado.observacionesAprobacion}
+                                </p>
+                              </div>
+                            )}
+                            
+                            {/* Mostrar motivo si fue rechazado */}
+                            {pedidoSeleccionado.estado === 'Rechazado' && pedidoSeleccionado.motivoRechazo && (
+                              <div className="info-row" style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', borderLeft: '3px solid #ef4444', borderRadius: '0.375rem' }}>
+                                <strong style={{ color: '#dc2626' }}>Motivo del rechazo:</strong>
+                                <p style={{ margin: '0.5rem 0 0 0', color: '#991b1b', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                                  {pedidoSeleccionado.motivoRechazo}
+                                </p>
+                              </div>
+                            )}
+                          </div>
 
-                      {pedidoSeleccionado?.pedidoId === pedido.pedidoId && (
-                        <div className="pedido-card__items">
-                          <h4>Detalle del Pedido</h4>
-                          <table className="mispedidos-items-table">
+                          <h3 style={{ marginTop: '1.5rem', marginBottom: '0.75rem', fontSize: '1rem', fontWeight: '600', color: '#2c2f88' }}>
+                            Productos Solicitados
+                          </h3>
+                          <table className="detail-table">
                             <thead>
                               <tr>
                                 <th>Suministro</th>
                                 <th>Cantidad</th>
-                                <th>P. Unit.</th>
+                                <th>P. Unitario</th>
                                 <th>Subtotal</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {pedido.items.map((item, idx) => (
+                              {pedidoSeleccionado.items.map((item, idx) => (
                                 <tr key={idx}>
                                   <td>{item.suministro}</td>
                                   <td className="text-center">{item.cantidad}</td>
@@ -574,10 +688,18 @@ export default function Home() {
                             </tbody>
                           </table>
                         </div>
-                      )}
+                        <div className="modal-footer">
+                          <button
+                            onClick={() => setShowDetailModal(false)}
+                            style={{ padding: '0.5rem 1rem', border: 'none', background: '#e5e7eb', color: '#374151', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           </div>

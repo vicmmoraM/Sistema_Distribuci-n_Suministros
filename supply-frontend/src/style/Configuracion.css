@@ -125,6 +125,40 @@
   font-size: 0.85rem;
 }
 
+.admin-subtabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  background: #f9fafb;
+  border-radius: 0.5rem;
+}
+
+.admin-subtab {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b7280;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-subtab:hover {
+  color: #1f2937;
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.admin-subtab.active {
+  color: #ffffff;
+  background: #2c2f88;
+  border-color: #2c2f88;
+  font-weight: 600;
+}
+
 .admin-refresh,
 .admin-primary,
 .admin-secondary,
@@ -456,6 +490,83 @@
   justify-content: flex-end;
   gap: 0.45rem;
   margin-top: 0.4rem;
+}
+
+/* Estilos para modal de PDV */
+.admin-modal-pdv {
+  max-width: 500px;
+}
+
+.admin-modal-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.admin-modal-header h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.admin-modal-header p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.admin-modal-field {
+  grid-column: 1 / -1;
+  margin-bottom: 0.5rem;
+}
+
+.admin-modal-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.admin-modal-label-icon {
+  font-size: 1rem;
+}
+
+.admin-modal-readonly {
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.admin-modal-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  color: #1f2937;
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.admin-modal-select:focus {
+  outline: none;
+  border-color: #2c2f88;
+  box-shadow: 0 0 0 3px rgba(44, 47, 136, 0.1);
+}
+
+.admin-modal-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-style: italic;
 }
 
 .admin-toast {

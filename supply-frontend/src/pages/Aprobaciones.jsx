@@ -323,7 +323,7 @@ export default function Aprobaciones() {
           <div className="header-section">
             <div className="header-with-logo">
               <div>
-                <h1>Aprobación de Pedidos</h1>
+                <h1>Aprobación de Suministros</h1>
                 <p className="subtitle">Validación y aprobación de solicitudes de suministros por departamento</p>
               </div>
               <img 
@@ -396,6 +396,31 @@ export default function Aprobaciones() {
                   placeholder="Hasta"
                 />
               </div>
+
+              <button
+                onClick={() => loadPedidos()}
+                className="btn-refresh-filters"
+                disabled={loading}
+                type="button"
+                title="Actualizar pedidos"
+                aria-label="Actualizar pedidos"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  className={loading ? 'refresh-spin' : ''}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M1 4V10H7" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M23 20V14H17" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.49 9A9 9 0 005.64 5.64L1 10" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.51 15A9 9 0 0018.36 18.36L23 14" />
+                </svg>
+              </button>
 
               <button onClick={clearFilters} className="btn-clear-filters filter-action-btn">
                 Limpiar

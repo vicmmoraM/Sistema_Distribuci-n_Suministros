@@ -36,6 +36,24 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     await conn.beginTransaction()
 
+    // Compatibilidad de esquema: algunas BD antiguas no tienen estas estructuras.
+    const [[rotacionTableInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'departamento_proveedores_rotacion'`
+    )
+    const hasDepartamentoProveedorRotacion = Number(rotacionTableInfo?.total || 0) > 0
+
+    const [[detalleProveedorColumnInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'detalle_pedidos'
+         AND COLUMN_NAME = 'id_proveedor'`
+    )
+    const hasDetalleProveedorColumn = Number(detalleProveedorColumnInfo?.total || 0) > 0
+
     // ── 2. Contexto del usuario (departamento y presupuesto) ───────────────
     const [deptRows] = await conn.query(
       `SELECT
@@ -81,7 +99,7 @@ router.post('/', requireAuth, async (req, res) => {
       }
 
       pdv = pdvRows[0]
-    } else {
+    } else if (hasDepartamentoProveedorRotacion) {
       // Para departamentos NO comerciales, calcular proveedor según rotación automática
       const mesActual = new Date().getMonth() + 1
       
@@ -242,10 +260,17 @@ router.post('/', requireAuth, async (req, res) => {
 
     // ── 8. Insertar detalles ───────────────────────────────────────────────
     for (const item of itemsValidados) {
-      await conn.query(
-        'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario, id_proveedor) VALUES (?, ?, ?, ?, ?)',
-        [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario, item.proveedorId]
-      )
+      if (hasDetalleProveedorColumn) {
+        await conn.query(
+          'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario, id_proveedor) VALUES (?, ?, ?, ?, ?)',
+          [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario, item.proveedorId]
+        )
+      } else {
+        await conn.query(
+          'INSERT INTO detalle_pedidos (id_pedido, id_suministro, cantidad, precio_unitario) VALUES (?, ?, ?, ?)',
+          [cabeceraPedidoId, item.suministroId, item.cantidad, item.precioUnitario]
+        )
+      }
     }
 
     await conn.commit()
@@ -466,7 +491,9 @@ router.get('/:id', requireAuth, async (req, res) => {
         u.login AS usuario_login,
         COALESCE(d.descripcion, 'Sin departamento') AS departamento,
         e.descripcion AS estado,
-        cp.id_estado_pedido
+        cp.id_estado_pedido,
+        cp.observaciones_aprobacion,
+        cp.motivo_rechazo
       FROM cabecera_pedidos cp
       INNER JOIN usuarios u ON cp.id_usuario = u.id_usuario
       LEFT JOIN departamentos d ON u.id_departamento = d.id_departamento
@@ -851,15 +878,34 @@ router.post('/:id/rechazar', requireAuth, async (req, res) => {
         return res.status(500).json({ error: 'Estado "Rechazado" no encontrado en la BD' })
       }
       
-      // Actualizar estado del pedido.
-      // Nota: el motivo ya se valida en API; si luego existe una tabla de historial,
-      // se puede persistir ahi sin romper compatibilidad del esquema actual.
-      await conn.query(
-        `UPDATE cabecera_pedidos 
-         SET id_estado_pedido = ?
-         WHERE id_pedido = ?`,
-        [estadoRechazado.id_estado_pedido, id]
+      // Actualizar estado del pedido y guardar el motivo de rechazo
+      const motivoLimpio = String(motivo || '').trim()
+      
+      // Verificar si existe la columna motivo_rechazo
+      const [motivoColumnRows] = await conn.query(
+        `SELECT COUNT(*) AS total
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'cabecera_pedidos'
+           AND COLUMN_NAME = 'motivo_rechazo'`
       )
+      const hasMotivoColumn = Number(motivoColumnRows?.[0]?.total || 0) > 0
+
+      if (hasMotivoColumn) {
+        await conn.query(
+          `UPDATE cabecera_pedidos 
+           SET id_estado_pedido = ?, motivo_rechazo = ?
+           WHERE id_pedido = ?`,
+          [estadoRechazado.id_estado_pedido, motivoLimpio, id]
+        )
+      } else {
+        await conn.query(
+          `UPDATE cabecera_pedidos 
+           SET id_estado_pedido = ?
+           WHERE id_pedido = ?`,
+          [estadoRechazado.id_estado_pedido, id]
+        )
+      }
       
       await conn.commit()
       conn.release()

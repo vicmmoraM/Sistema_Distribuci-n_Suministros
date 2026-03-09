@@ -122,7 +122,7 @@ export default function Layout({ showLogout = true }) {
     },
     { 
       key: 'supplies', 
-      label: 'Suministros',
+      label: 'Gestión',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
           stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -150,7 +150,7 @@ export default function Layout({ showLogout = true }) {
   const pedidosItems = [
     { 
       key: 'mis-pedidos', 
-      label: 'Mis Pedidos',
+      label: 'Mis Suministros',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
           stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -161,7 +161,7 @@ export default function Layout({ showLogout = true }) {
     },
     { 
       key: 'nuevo-pedido', 
-      label: 'Nuevo Pedido',
+      label: 'Nuevo Suministro',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"
           stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -176,7 +176,7 @@ export default function Layout({ showLogout = true }) {
   const aprobacionesItems = [
     { 
       key: 'pedidos', 
-      label: 'Aprobación de Pedidos',
+      label: 'Aprobación de Suministros',
       ruta: '/aprobaciones/pedidos',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none"

@@ -44,3 +44,46 @@ INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra) VAL
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'RESALTADOR'),2,0.64),
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'SOBRE MANILA A4 F3'),1,0.18),
 ((SELECT id_suministro FROM suministros WHERE descripcion = 'SOBRE MANILA A4 F3'),2,0.12);
+
+INSERT INTO supervisores (nombres) VALUES 
+('Roy Dougherty'),
+('Alexander Aman'),
+('Erick Corozo'),
+('Xavier Vaca'),
+('Lissette Coronel'),
+('Cesar Macias'),
+('Galo Cevallos');
+
+INSERT IGNORE INTO supervisores (nombres) VALUES 
+('Roy Dougherty'), ('Alexander Aman'), ('Erick Corozo'), 
+('Xavier Vaca'), ('Lissette Coronel'), ('Cesar Macias'), ('Galo Cevallos');
+
+-- -----------------------------------------------------
+-- ACTUALIZACIÓN MASIVA DE LOCALES (Basado en el PDF)
+-- -----------------------------------------------------
+
+-- BALZAR - Ligia Rodriguez
+UPDATE pdvs 
+SET id_ciudad = (SELECT id_ciudad FROM ciudades WHERE descripcion = 'BALZAR' LIMIT 1),
+    id_supervisor = (SELECT id_supervisor FROM supervisores WHERE nombres = 'Ligia Rodriguez' LIMIT 1)
+WHERE descripcion IN ('FC004', 'FC005', 'FC006', 'FC095', 'FC096', 'FC097', 'FC098', 'FC099', 'FC100', 'FC101', 'FC102', 'FC103', 'FC104', 'FC105', 'FC106', 'FC107', 'FC108', 'FC109', 'FC110');
+
+-- DURAN - Fernando Vera
+UPDATE pdvs 
+SET id_ciudad = (SELECT id_ciudad FROM ciudades WHERE descripcion = 'DURAN' LIMIT 1),
+    id_supervisor = (SELECT id_supervisor FROM supervisores WHERE nombres = 'Fernando Vera' LIMIT 1)
+WHERE descripcion IN ('FC007', 'FC008', 'FC009', 'FC010', 'FC011', 'FC012', 'FC013', 'FC014', 'FC015', 'FC016', 'FC017', 'FC018', 'FC019', 'FC020', 'FC021', 'FC022', 'FC023', 'FC024', 'FC025', 'FC026', 'FC027', 'FC028', 'FC029', 'FC030', 'FC031', 'FC032', 'FC033', 'FC035', 'FC042', 'FC043');
+
+-- GUAYAQUIL - Roy Dougherty (Guayas 1)
+UPDATE pdvs 
+SET id_ciudad = (SELECT id_ciudad FROM ciudades WHERE descripcion = 'GUAYAQUIL' LIMIT 1),
+    id_supervisor = (SELECT id_supervisor FROM supervisores WHERE nombres = 'Roy Dougherty' LIMIT 1)
+WHERE descripcion IN ('FC034', 'FC036', 'FC037', 'FC044', 'FC045', 'FC046');
+
+-- GUAYAQUIL - Alexander Aman (Guayas 2)
+UPDATE pdvs 
+SET id_ciudad = (SELECT id_ciudad FROM ciudades WHERE descripcion = 'GUAYAQUIL' LIMIT 1),
+    id_supervisor = (SELECT id_supervisor FROM supervisores WHERE nombres = 'Alexander Aman' LIMIT 1)
+WHERE descripcion IN ('FC038', 'FC039', 'FC040', 'FC041', 'FC050', 'FC051', 'FC055');
+
+SET SQL_SAFE_UPDATES = 1;

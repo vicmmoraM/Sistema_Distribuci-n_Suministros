@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { SidebarProvider } from './context/SidebarContext'
+import { DataRefreshProvider } from './context/DataRefreshContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Home from './pages/Home'
@@ -16,8 +17,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <SidebarProvider>
-          <Routes>
+        <DataRefreshProvider>
+          <SidebarProvider>
+            <Routes>
           {/* Pública */}
           <Route path="/login" element={<Login />} />
 
@@ -59,8 +61,9 @@ export default function App() {
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-        </SidebarProvider>
+            </Routes>
+          </SidebarProvider>
+        </DataRefreshProvider>
       </AuthProvider>
     </BrowserRouter>
   )

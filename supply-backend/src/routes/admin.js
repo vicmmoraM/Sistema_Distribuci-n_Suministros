@@ -46,8 +46,17 @@ router.get('/meta', async (req, res) => {
     const [proveedores] = await pool.query(
       'SELECT id_proveedor, nombre_proveedor FROM proveedores ORDER BY nombre_proveedor ASC'
     )
+    const [zonasComerciales] = await pool.query(
+      'SELECT id_zona_comercial, zona, codigo_zona FROM zonas_comerciales ORDER BY zona ASC'
+    )
+    const [gruposPdvs] = await pool.query(
+      'SELECT id_grupo_pdv, descripcion, monto_autorizado FROM grupo_pdvs ORDER BY descripcion ASC'
+    )
+    const [estadosPdvs] = await pool.query(
+      'SELECT id_estado_pdv, descripcion FROM estado_pdvs ORDER BY descripcion ASC'
+    )
 
-    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores })
+    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, gruposPdvs, estadosPdvs })
   } catch (err) {
     console.error('Error cargando metadatos admin:', err.message)
     return res.status(500).json({ error: 'Error al cargar metadatos administrativos.' })
@@ -468,6 +477,225 @@ router.put('/roles/:id/permissions', async (req, res) => {
   } catch (err) {
     console.error('Error actualizando permisos:', err.message)
     return res.status(500).json({ error: 'Error al actualizar permisos del rol.' })
+  }
+})
+
+// =====================================================
+// PDVs - PROVEEDORES
+// =====================================================
+
+router.get('/pdvs', async (req, res) => {
+  const { search = '', zone = '', provider = '' } = req.query
+
+  try {
+    const params = []
+    const conditions = []
+
+    if (search) {
+      conditions.push('(p.descripcion LIKE ? OR p.direccion LIKE ?)')
+      params.push(`%${search}%`, `%${search}%`)
+    }
+
+    if (zone) {
+      conditions.push('p.id_zona_comercial = ?')
+      params.push(Number(zone))
+    }
+
+    if (provider) {
+      conditions.push('p.id_proveedor_principal = ?')
+      params.push(Number(provider))
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const [rows] = await pool.query(
+      `SELECT
+        p.id_pdv,
+        p.descripcion,
+        p.direccion,
+        p.id_proveedor_principal,
+        p.id_grupo_pdv,
+        p.id_estado_pdv,
+        p.id_zona_comercial,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
+        zc.zona AS zona_comercial,
+        ep.descripcion AS estado,
+        gp.descripcion AS grupo,
+        gp.monto_autorizado
+      FROM pdvs p
+      LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
+      INNER JOIN zonas_comerciales zc ON zc.id_zona_comercial = p.id_zona_comercial
+      INNER JOIN estado_pdvs ep ON ep.id_estado_pdv = p.id_estado_pdv
+      INNER JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
+      ${whereClause}
+      ORDER BY p.descripcion ASC`,
+      params
+    )
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error listando PDVs:', err.message)
+    return res.status(500).json({ error: 'Error al obtener PDVs.' })
+  }
+})
+
+router.post('/pdvs', async (req, res) => {
+  const {
+    descripcion,
+    direccion,
+    id_grupo_pdv,
+    id_estado_pdv,
+    id_zona_comercial,
+    id_proveedor_principal
+  } = req.body
+
+  if (!descripcion || !id_grupo_pdv || !id_estado_pdv || !id_zona_comercial) {
+    return res.status(400).json({ error: 'Descripción, grupo, estado y zona comercial son obligatorios.' })
+  }
+
+  try {
+    const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
+
+    const [result] = await pool.query(
+      `INSERT INTO pdvs (descripcion, direccion, id_grupo_pdv, id_estado_pdv, id_zona_comercial, id_proveedor_principal)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [descripcion, direccion || null, Number(id_grupo_pdv), Number(id_estado_pdv), Number(id_zona_comercial), proveedorValue]
+    )
+
+    return res.status(201).json({ id_pdv: result.insertId, message: 'PDV creado correctamente.' })
+  } catch (err) {
+    console.error('Error creando PDV:', err.message)
+    return res.status(500).json({ error: 'Error al crear PDV.' })
+  }
+})
+
+router.put('/pdvs/:id', async (req, res) => {
+  const pdvId = Number(req.params.id)
+  const { id_proveedor_principal, id_grupo_pdv } = req.body
+
+  if (!id_grupo_pdv) {
+    return res.status(400).json({ error: 'El grupo del PDV es obligatorio.' })
+  }
+
+  try {
+    const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
+
+    await pool.query(
+      'UPDATE pdvs SET id_proveedor_principal = ?, id_grupo_pdv = ? WHERE id_pdv = ?',
+      [proveedorValue, Number(id_grupo_pdv), pdvId]
+    )
+
+    return res.json({ message: 'PDV actualizado correctamente.' })
+  } catch (err) {
+    console.error('Error actualizando PDV:', err.message)
+    return res.status(500).json({ error: 'Error al actualizar PDV.' })
+  }
+})
+
+// =====================================================
+// CATEGORÍAS (TIPO_SUMINISTROS)
+// =====================================================
+
+router.get('/categories', async (req, res) => {
+  const { search = '' } = req.query
+
+  try {
+    const params = []
+    const conditions = []
+
+    if (search) {
+      conditions.push('ts.descripcion LIKE ?')
+      params.push(`%${search}%`)
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const [rows] = await pool.query(
+      `SELECT
+        ts.id_tipo_suministro,
+        ts.descripcion,
+        COUNT(s.id_suministro) AS total_suministros
+      FROM tipo_suministros ts
+      LEFT JOIN suministros s ON s.id_tipo_suministro = ts.id_tipo_suministro
+      ${whereClause}
+      GROUP BY ts.id_tipo_suministro, ts.descripcion
+      ORDER BY ts.descripcion ASC`,
+      params
+    )
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error listando categorías:', err.message)
+    return res.status(500).json({ error: 'Error al obtener categorías.' })
+  }
+})
+
+router.post('/categories', async (req, res) => {
+  const { descripcion } = req.body
+
+  if (!descripcion || descripcion.trim() === '') {
+    return res.status(400).json({ error: 'La descripción es obligatoria.' })
+  }
+
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO tipo_suministros (descripcion) VALUES (?)',
+      [descripcion.trim()]
+    )
+
+    return res.status(201).json({
+      id_tipo_suministro: result.insertId,
+      message: 'Categoría creada correctamente.'
+    })
+  } catch (err) {
+    console.error('Error creando categoría:', err.message)
+    return res.status(500).json({ error: 'Error al crear categoría.' })
+  }
+})
+
+router.put('/categories/:id', async (req, res) => {
+  const categoryId = Number(req.params.id)
+  const { descripcion } = req.body
+
+  if (!descripcion || descripcion.trim() === '') {
+    return res.status(400).json({ error: 'La descripción es obligatoria.' })
+  }
+
+  try {
+    await pool.query(
+      'UPDATE tipo_suministros SET descripcion = ? WHERE id_tipo_suministro = ?',
+      [descripcion.trim(), categoryId]
+    )
+
+    return res.json({ message: 'Categoría actualizada correctamente.' })
+  } catch (err) {
+    console.error('Error actualizando categoría:', err.message)
+    return res.status(500).json({ error: 'Error al actualizar categoría.' })
+  }
+})
+
+router.delete('/categories/:id', async (req, res) => {
+  const categoryId = Number(req.params.id)
+
+  try {
+    // Verificar si hay suministros usando esta categoría
+    const [[check]] = await pool.query(
+      'SELECT COUNT(*) AS total FROM suministros WHERE id_tipo_suministro = ?',
+      [categoryId]
+    )
+
+    if (check.total > 0) {
+      return res.status(400).json({
+        error: `No se puede eliminar esta categoría porque tiene ${check.total} suministro(s) asociado(s).`
+      })
+    }
+
+    await pool.query('DELETE FROM tipo_suministros WHERE id_tipo_suministro = ?', [categoryId])
+
+    return res.json({ message: 'Categoría eliminada correctamente.' })
+  } catch (err) {
+    console.error('Error eliminando categoría:', err.message)
+    return res.status(500).json({ error: 'Error al eliminar categoría.' })
   }
 })
 
