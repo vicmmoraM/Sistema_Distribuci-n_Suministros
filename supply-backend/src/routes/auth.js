@@ -5,6 +5,7 @@
 const express = require('express')
 const router = express.Router()
 const { pool } = require('../config/db')
+const bcrypt = require('bcrypt')
 
 function normalizeText(value) {
   return String(value || '')
@@ -65,15 +66,23 @@ async function syncUser(conn, login, nombres, departamento) {
 }
 
 async function getDepartmentInfo(conn, departmentId) {
+  const now = new Date()
+  const periodoAnio = now.getFullYear()
+  const periodoMes = now.getMonth() + 1
+
   const [deptRows] = await conn.query(
     `SELECT
       d.descripcion AS departmentName,
       COALESCE(pd.monto_autorizado, 0) AS departmentBudget
      FROM departamentos d
-     LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
+     LEFT JOIN presupuesto_departamentos pd
+       ON pd.id_departamento = d.id_departamento
+      AND pd.periodo_anio = ?
+      AND (pd.periodo_mes = ? OR pd.periodo_mes = 0)
      WHERE d.id_departamento = ?
+     ORDER BY CASE WHEN pd.periodo_mes = ? THEN 0 ELSE 1 END
      LIMIT 1`,
-    [departmentId]
+    [periodoAnio, periodoMes, departmentId, periodoMes]
   )
 
   if (deptRows.length === 0) {
@@ -102,13 +111,14 @@ async function getRolePermissions(conn, roleId) {
     `SELECT
       r.id_rol,
       r.descripcion AS roleName,
-      COALESCE(rp.puede_pedidos, 1) AS pedidos,
-      COALESCE(rp.puede_reportes, 0) AS reportes,
-      COALESCE(rp.puede_aprobacion, 0) AS aprobacion,
-      COALESCE(rp.puede_configuracion, 0) AS configuracion
+      MAX(CASE WHEN vrp.permiso = 'PEDIDOS' THEN 1 ELSE 0 END) AS pedidos,
+      MAX(CASE WHEN vrp.permiso = 'REPORTES' THEN 1 ELSE 0 END) AS reportes,
+      MAX(CASE WHEN vrp.permiso = 'APROBACION' THEN 1 ELSE 0 END) AS aprobacion,
+      MAX(CASE WHEN vrp.permiso = 'CONFIGURACION' THEN 1 ELSE 0 END) AS configuracion
      FROM roles r
-     LEFT JOIN rol_permisos rp ON rp.id_rol = r.id_rol
+     LEFT JOIN v_rol_permisos vrp ON vrp.id_rol = r.id_rol
      WHERE r.id_rol = ?
+     GROUP BY r.id_rol, r.descripcion
      LIMIT 1`,
     [roleId]
   )
@@ -143,6 +153,9 @@ async function getRolePermissions(conn, roleId) {
 router.get('/departamento/:username', async (req, res) => {
   try {
     const { username } = req.params
+    const now = new Date()
+    const periodoAnio = now.getFullYear()
+    const periodoMes = now.getMonth() + 1
 
     if (!username) {
       return res.status(400).json({ error: 'Username requerido.' })
@@ -154,9 +167,12 @@ router.get('/departamento/:username', async (req, res) => {
               COALESCE(pd.monto_autorizado, 0) AS departmentBudget
        FROM usuarios u
        INNER JOIN departamentos d ON u.id_departamento = d.id_departamento
-       LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
+       LEFT JOIN presupuesto_departamentos pd
+         ON pd.id_departamento = d.id_departamento
+        AND pd.periodo_anio = ?
+        AND (pd.periodo_mes = ? OR pd.periodo_mes = 0)
        WHERE LOWER(TRIM(u.login)) = LOWER(TRIM(?))`,
-      [username]
+      [periodoAnio, periodoMes, username]
     )
 
     if (bdRows.length > 0) {
@@ -242,7 +258,24 @@ router.post('/login', async (req, res) => {
         return res.status(403).json({ error: 'Tu usuario está desactivado. Contacta al administrador.' })
       }
 
-      if (user.password !== password) {
+      let isPasswordValid = false
+      const storedPassword = String(user.password || '')
+
+      if (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$')) {
+        isPasswordValid = await bcrypt.compare(password, storedPassword)
+      } else {
+        // Compatibilidad temporal: usuarios legacy en texto plano.
+        isPasswordValid = storedPassword === password
+        if (isPasswordValid) {
+          const upgradedHash = await bcrypt.hash(password, 12)
+          await conn.query(
+            'UPDATE usuarios SET password = ? WHERE id_usuario = ?',
+            [upgradedHash, user.id_usuario]
+          )
+        }
+      }
+
+      if (!isPasswordValid) {
         await conn.rollback()
         conn.release()
         return res.status(401).json({ error: 'Contraseña incorrecta.' })
