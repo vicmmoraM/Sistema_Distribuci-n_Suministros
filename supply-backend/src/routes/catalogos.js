@@ -29,17 +29,18 @@ router.get('/pdvs', requireAuth, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT 
         p.id_pdv,
-        p.descripcion,
+        p.codigo_centro_costo AS descripcion,
         p.direccion,
-        z.zona AS ciudad,
+        c.descripcion AS ciudad,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor,
         gp.monto_autorizado AS cupo
       FROM pdvs p
       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
+      INNER JOIN ciudades c ON z.id_ciudad = c.id_ciudad
       INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
       LEFT JOIN proveedores pr       ON p.id_proveedor_principal = pr.id_proveedor
       WHERE p.id_estado_pdv = 1
-      ORDER BY p.descripcion
+      ORDER BY p.codigo_centro_costo
     `);
     return res.json(rows);
   } catch (err) {
@@ -102,46 +103,19 @@ router.get('/suministros', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT
-        s.id_suministro,
-        s.descripcion,
-        COALESCE(
-          MIN(sp.precio_compra),
-          (
-            SELECT sp2.precio_compra
-            FROM suministros_precios sp2
-            WHERE sp2.id_suministro = s.id_suministro
-            ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
-            LIMIT 1
-          ),
-          0
-        ) AS precio,
-        COALESCE(
-          MAX(pr.nombre_proveedor),
-          (
-            SELECT pr2.nombre_proveedor
-            FROM suministros_precios sp2
-            INNER JOIN proveedores pr2 ON pr2.id_proveedor = sp2.id_proveedor
-            WHERE sp2.id_suministro = s.id_suministro
-            ORDER BY sp2.precio_compra ASC, sp2.id_suministro_precio ASC
-            LIMIT 1
-          ),
-          'Sin proveedor'
-        ) AS proveedor
-      FROM suministros s
-      INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
+        cv.id_suministro,
+        cv.suministro AS descripcion,
+        cv.precio_vigente AS precio,
+        cv.nombre_proveedor AS proveedor
+      FROM v_catalogo_disponible cv
       LEFT JOIN pdvs p ON p.id_pdv = ?
-      LEFT JOIN suministros_precios sp
-        ON sp.id_suministro = s.id_suministro
-       AND (p.id_proveedor_principal IS NULL OR sp.id_proveedor = p.id_proveedor_principal)
-      LEFT JOIN proveedores pr ON pr.id_proveedor = sp.id_proveedor
-      WHERE ts.descripcion = (
-        SELECT descripcion
-        FROM tipo_suministros
-        WHERE id_tipo_suministro = ?
-        LIMIT 1
+      WHERE cv.id_suministro IN (
+        SELECT s.id_suministro
+        FROM suministros s
+        WHERE s.id_tipo_suministro = ?
       )
-      GROUP BY s.id_suministro, s.descripcion
-      ORDER BY s.descripcion`,
+        AND (p.id_proveedor_principal IS NULL OR cv.id_proveedor = p.id_proveedor_principal)
+      ORDER BY cv.suministro`,
       [pdv || null, tipo]
     );
     return res.json(rows);

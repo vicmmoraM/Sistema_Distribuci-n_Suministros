@@ -2,16 +2,18 @@ const express = require('express')
 const router = express.Router()
 const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
+const bcrypt = require('bcrypt')
 
 async function requireAdminAccess(req, res, next) {
   try {
     const [rows] = await pool.query(
       `SELECT
         u.activo,
-        COALESCE(rp.puede_configuracion, 0) AS puede_configuracion
+        MAX(CASE WHEN vrp.permiso = 'CONFIGURACION' THEN 1 ELSE 0 END) AS puede_configuracion
        FROM usuarios u
-       LEFT JOIN rol_permisos rp ON rp.id_rol = u.id_rol
+       LEFT JOIN v_rol_permisos vrp ON vrp.id_rol = u.id_rol
        WHERE LOWER(TRIM(u.login)) = LOWER(TRIM(?))
+       GROUP BY u.id_usuario, u.activo
        LIMIT 1`,
       [req.session.userlogin]
     )
@@ -68,7 +70,16 @@ router.get('/overview', async (req, res) => {
     const [[usersCount]] = await pool.query('SELECT COUNT(*) AS total FROM usuarios')
     const [[usersActive]] = await pool.query('SELECT COUNT(*) AS total FROM usuarios WHERE activo = 1')
     const [[suppliesCount]] = await pool.query('SELECT COUNT(*) AS total FROM suministros')
-    const [[suppliesLow]] = await pool.query('SELECT COUNT(*) AS total FROM suministros WHERE stock <= 10')
+    const [[suppliesLow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM (
+         SELECT s.id_suministro, COALESCE(SUM(sps.stock), 0) AS stock_total
+         FROM suministros s
+         LEFT JOIN suministro_proveedor_stock sps ON sps.id_suministro = s.id_suministro
+         GROUP BY s.id_suministro
+       ) x
+       WHERE x.stock_total <= 10`
+    )
 
     return res.json({
       totalUsers: Number(usersCount.total || 0),
@@ -137,10 +148,11 @@ router.post('/users', async (req, res) => {
   }
 
   try {
+    const passwordHash = await bcrypt.hash(String(password), 12)
     const [result] = await pool.query(
       `INSERT INTO usuarios (id_departamento, id_rol, login, password, nombres, email, activo)
        VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id_departamento, id_rol, login, password, nombres, email]
+      [id_departamento, id_rol, login, passwordHash, nombres, email]
     )
 
     return res.status(201).json({ id_usuario: result.insertId, message: 'Usuario creado correctamente.' })
@@ -161,21 +173,26 @@ router.put('/users/:id', async (req, res) => {
   }
 
   try {
-    // Si tiene email y password, es una creación o actualización completa
-    if (email && password) {
+    // Si viene password, se actualiza con hash.
+    if (password && String(password).trim()) {
+      const passwordHash = await bcrypt.hash(String(password), 12)
       await pool.query(
         `UPDATE usuarios
          SET nombres = ?, email = ?, id_rol = ?, id_departamento = ?, password = ?, activo = ?
          WHERE id_usuario = ?`,
-        [nombres, email, id_rol, id_departamento, password, activo ? 1 : 0, userId]
+        [nombres, email, id_rol, id_departamento, passwordHash, activo ? 1 : 0, userId]
       )
     } else {
-      // Edición simple: solo rol, departamento y estado activo
+      // Edición simple: no toca contraseña.
       await pool.query(
         `UPDATE usuarios
-         SET id_rol = ?, id_departamento = ?, activo = ?
+         SET nombres = COALESCE(?, nombres),
+             email = COALESCE(?, email),
+             id_rol = ?,
+             id_departamento = ?,
+             activo = ?
          WHERE id_usuario = ?`,
-        [id_rol, id_departamento, activo ? 1 : 0, userId]
+        [nombres || null, email || null, id_rol, id_departamento, activo ? 1 : 0, userId]
       )
     }
 
@@ -233,7 +250,7 @@ router.get('/supplies', async (req, res) => {
     }
 
     if (provider) {
-      conditions.push('sp.id_proveedor = ?')
+      conditions.push('spv.id_proveedor = ?')
       params.push(Number(provider))
     }
 
@@ -245,21 +262,26 @@ router.get('/supplies', async (req, res) => {
         s.descripcion,
         s.id_tipo_suministro,
         ts.descripcion AS categoria,
-        s.stock,
+        COALESCE(sps.stock, 0) AS stock,
         s.id_estado_suministro,
         es.descripcion AS estado,
-        sp.id_suministro_precio,
-        sp.id_proveedor,
+        spv.id_suministro_precio,
+        spv.id_proveedor,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
-        sp.precio_compra,
+        spv.precio_compra,
         DATE_FORMAT(s.fecha_actualizacion, '%Y-%m-%d %H:%i:%s') AS fecha_actualizacion
       FROM suministros s
       INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
       INNER JOIN estado_suministros es ON es.id_estado_suministro = s.id_estado_suministro
-      LEFT JOIN suministros_precios sp ON sp.id_suministro = s.id_suministro
-      LEFT JOIN proveedores pr ON pr.id_proveedor = sp.id_proveedor
+      LEFT JOIN suministros_precios spv
+        ON spv.id_suministro = s.id_suministro
+       AND spv.fecha_vigencia_hasta IS NULL
+      LEFT JOIN proveedores pr ON pr.id_proveedor = spv.id_proveedor
+      LEFT JOIN suministro_proveedor_stock sps
+        ON sps.id_suministro = s.id_suministro
+       AND sps.id_proveedor = spv.id_proveedor
       ${whereClause}
-      ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, sp.id_suministro_precio ASC`,
+      ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, spv.id_suministro_precio ASC`,
       params
     )
 
@@ -294,19 +316,25 @@ router.post('/supplies', async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      `INSERT INTO suministros (descripcion, id_tipo_suministro, stock, id_estado_suministro)
-       VALUES (?, ?, ?, ?)`,
-      [descripcion, id_tipo_suministro, Number(stock), id_estado_suministro]
+      `INSERT INTO suministros (descripcion, id_tipo_suministro, id_estado_suministro)
+       VALUES (?, ?, ?)`,
+      [descripcion, id_tipo_suministro, id_estado_suministro]
     )
 
     if (id_proveedor && precio_compra !== undefined) {
+      await pool.query('CALL sp_actualizar_precio(?, ?, ?, ?)', [
+        result.insertId,
+        Number(id_proveedor),
+        Number(precio_compra),
+        req.session?.userId || null,
+      ])
+
       await pool.query(
-        `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
+        `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock)
          VALUES (?, ?, ?)
          ON DUPLICATE KEY UPDATE
-           precio_compra = VALUES(precio_compra),
-           ultima_actualizacion = CURRENT_TIMESTAMP`,
-        [result.insertId, Number(id_proveedor), Number(precio_compra)]
+           stock = VALUES(stock)`,
+        [result.insertId, Number(id_proveedor), Number(stock || 0)]
       )
     }
 
@@ -329,7 +357,7 @@ router.put('/supplies/:id', async (req, res) => {
     precio_compra,
   } = req.body
 
-  if (!descripcion || !id_tipo_suministro || stock === undefined || !id_estado_suministro) {
+    if (!descripcion || !id_tipo_suministro || stock === undefined || !id_estado_suministro) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' })
   }
 
@@ -344,58 +372,25 @@ router.put('/supplies/:id', async (req, res) => {
   try {
     await pool.query(
       `UPDATE suministros
-       SET descripcion = ?, id_tipo_suministro = ?, stock = ?, id_estado_suministro = ?
+       SET descripcion = ?, id_tipo_suministro = ?, id_estado_suministro = ?
        WHERE id_suministro = ?`,
-      [descripcion, id_tipo_suministro, Number(stock), id_estado_suministro, supplyId]
+      [descripcion, id_tipo_suministro, id_estado_suministro, supplyId]
     )
 
-    if (id_suministro_precio) {
-      const [rows] = await pool.query(
-        `SELECT id_suministro_precio, id_suministro, id_proveedor
-         FROM suministros_precios
-         WHERE id_suministro_precio = ? AND id_suministro = ?
-         LIMIT 1`,
-        [Number(id_suministro_precio), supplyId]
-      )
+    await pool.query('CALL sp_actualizar_precio(?, ?, ?, ?)', [
+      supplyId,
+      Number(id_proveedor),
+      Number(precio_compra),
+      req.session?.userId || null,
+    ])
 
-      if (rows.length === 0) {
-        return res.status(404).json({ error: 'No se encontró el registro de proveedor/precio del suministro.' })
-      }
-
-      const current = rows[0]
-
-      if (Number(current.id_proveedor) === Number(id_proveedor)) {
-        await pool.query(
-          `UPDATE suministros_precios
-           SET precio_compra = ?, ultima_actualizacion = CURRENT_TIMESTAMP
-           WHERE id_suministro_precio = ?`,
-          [Number(precio_compra), Number(id_suministro_precio)]
-        )
-      } else {
-        await pool.query(
-          `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
-           VALUES (?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-             precio_compra = VALUES(precio_compra),
-             ultima_actualizacion = CURRENT_TIMESTAMP`,
-          [supplyId, Number(id_proveedor), Number(precio_compra)]
-        )
-
-        await pool.query(
-          'DELETE FROM suministros_precios WHERE id_suministro_precio = ?',
-          [Number(id_suministro_precio)]
-        )
-      }
-    } else {
-      await pool.query(
-        `INSERT INTO suministros_precios (id_suministro, id_proveedor, precio_compra)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           precio_compra = VALUES(precio_compra),
-           ultima_actualizacion = CURRENT_TIMESTAMP`,
-        [supplyId, Number(id_proveedor), Number(precio_compra)]
-      )
-    }
+    await pool.query(
+      `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         stock = VALUES(stock)`,
+      [supplyId, Number(id_proveedor), Number(stock || 0)]
+    )
 
     return res.json({ message: 'Suministro actualizado correctamente.' })
   } catch (err) {
@@ -408,6 +403,7 @@ router.delete('/supplies/:id', async (req, res) => {
   const supplyId = Number(req.params.id)
 
   try {
+    await pool.query('DELETE FROM suministro_proveedor_stock WHERE id_suministro = ?', [supplyId])
     // Primero eliminar los precios asociados
     await pool.query('DELETE FROM suministros_precios WHERE id_suministro = ?', [supplyId])
     
@@ -427,15 +423,15 @@ router.get('/roles', async (req, res) => {
       `SELECT
         r.id_rol,
         r.descripcion,
-        COALESCE(rp.puede_pedidos, 1) AS puede_pedidos,
-        COALESCE(rp.puede_reportes, 0) AS puede_reportes,
-        COALESCE(rp.puede_aprobacion, 0) AS puede_aprobacion,
-        COALESCE(rp.puede_configuracion, 0) AS puede_configuracion,
+        MAX(CASE WHEN vrp.permiso = 'PEDIDOS' THEN 1 ELSE 0 END) AS puede_pedidos,
+        MAX(CASE WHEN vrp.permiso = 'REPORTES' THEN 1 ELSE 0 END) AS puede_reportes,
+        MAX(CASE WHEN vrp.permiso = 'APROBACION' THEN 1 ELSE 0 END) AS puede_aprobacion,
+        MAX(CASE WHEN vrp.permiso = 'CONFIGURACION' THEN 1 ELSE 0 END) AS puede_configuracion,
         COUNT(u.id_usuario) AS total_usuarios
       FROM roles r
-      LEFT JOIN rol_permisos rp ON rp.id_rol = r.id_rol
+      LEFT JOIN v_rol_permisos vrp ON vrp.id_rol = r.id_rol
       LEFT JOIN usuarios u ON u.id_rol = r.id_rol
-      GROUP BY r.id_rol, r.descripcion, rp.puede_pedidos, rp.puede_reportes, rp.puede_aprobacion, rp.puede_configuracion
+      GROUP BY r.id_rol, r.descripcion
       ORDER BY r.descripcion ASC`
     )
 
@@ -456,22 +452,24 @@ router.put('/roles/:id/permissions', async (req, res) => {
   } = req.body
 
   try {
-    await pool.query(
-      `INSERT INTO rol_permisos (id_rol, puede_pedidos, puede_reportes, puede_aprobacion, puede_configuracion)
-       VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         puede_pedidos = VALUES(puede_pedidos),
-         puede_reportes = VALUES(puede_reportes),
-         puede_aprobacion = VALUES(puede_aprobacion),
-         puede_configuracion = VALUES(puede_configuracion)`,
-      [
-        roleId,
-        puede_pedidos ? 1 : 0,
-        puede_reportes ? 1 : 0,
-        puede_aprobacion ? 1 : 0,
-        puede_configuracion ? 1 : 0,
-      ]
-    )
+    await pool.query('DELETE FROM rol_has_permisos WHERE id_rol = ?', [roleId])
+
+    const permissionsToSet = [
+      puede_pedidos ? 'PEDIDOS' : null,
+      puede_reportes ? 'REPORTES' : null,
+      puede_aprobacion ? 'APROBACION' : null,
+      puede_configuracion ? 'CONFIGURACION' : null,
+    ].filter(Boolean)
+
+    for (const permissionCode of permissionsToSet) {
+      await pool.query(
+        `INSERT INTO rol_has_permisos (id_rol, id_permiso)
+         SELECT ?, p.id_permiso
+         FROM permisos p
+         WHERE p.codigo = ?`,
+        [roleId, permissionCode]
+      )
+    }
 
     return res.json({ message: 'Permisos actualizados correctamente.' })
   } catch (err) {
@@ -492,7 +490,7 @@ router.get('/pdvs', async (req, res) => {
     const conditions = []
 
     if (search) {
-      conditions.push('(p.descripcion LIKE ? OR p.direccion LIKE ?)')
+      conditions.push('(p.codigo_centro_costo LIKE ? OR p.direccion LIKE ?)')
       params.push(`%${search}%`, `%${search}%`)
     }
 
@@ -511,7 +509,7 @@ router.get('/pdvs', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT
         p.id_pdv,
-        p.descripcion,
+        p.codigo_centro_costo AS descripcion,
         p.direccion,
         p.id_proveedor_principal,
         p.id_grupo_pdv,
@@ -528,7 +526,7 @@ router.get('/pdvs', async (req, res) => {
       INNER JOIN estado_pdvs ep ON ep.id_estado_pdv = p.id_estado_pdv
       INNER JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
       ${whereClause}
-      ORDER BY p.descripcion ASC`,
+      ORDER BY p.codigo_centro_costo ASC`,
       params
     )
 
@@ -557,7 +555,7 @@ router.post('/pdvs', async (req, res) => {
     const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
 
     const [result] = await pool.query(
-      `INSERT INTO pdvs (descripcion, direccion, id_grupo_pdv, id_estado_pdv, id_zona_comercial, id_proveedor_principal)
+      `INSERT INTO pdvs (codigo_centro_costo, direccion, id_grupo_pdv, id_estado_pdv, id_zona_comercial, id_proveedor_principal)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [descripcion, direccion || null, Number(id_grupo_pdv), Number(id_estado_pdv), Number(id_zona_comercial), proveedorValue]
     )

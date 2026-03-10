@@ -9,6 +9,7 @@ const { testConnection } = require('./config/db');
 const authRoutes      = require('./routes/auth');
 const catalogosRoutes = require('./routes/catalogos');
 const pedidosRoutes   = require('./routes/pedidos');
+const pedidosAprobacionExampleRoutes = require('./routes/pedidos.aprobacion.example');
 const reportesRoutes  = require('./routes/reportes');
 const adminRoutes     = require('./routes/admin');
 
@@ -50,6 +51,7 @@ app.use(session({
 app.use('/api/auth',      authRoutes);
 app.use('/api/catalogos', catalogosRoutes);
 app.use('/api/pedidos',   pedidosRoutes);
+app.use('/api/pedidos-aprobacion-example', pedidosAprobacionExampleRoutes);
 app.use('/api/reportes',  reportesRoutes);
 app.use('/api/admin',     adminRoutes);
 
@@ -78,7 +80,7 @@ async function start() {
     console.log(`🚀 API disponible en la red!`);
     console.log(`🏠 Local:   http://localhost:${PORT}`);
     // Tip: Aquí podrías poner tu IP real para no perderte
-    console.log(`🌐 Red:     http://10.101.13.120:${PORT}`); 
+    console.log(`🌐 Red:     http://localhost:${PORT}`); 
     console.log(`🛠️  CORS:    ${corsOrigins.join(', ')}`);
   });
 }

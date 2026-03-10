@@ -74,7 +74,7 @@ const BASE_SELECT = `
     u.login                           AS usuarioLogin,
     u.nombres                         AS usuarioNombre,
     COALESCE(d.descripcion, 'Sin departamento') AS departamento,
-    COALESCE(p.descripcion, 'N/A')    AS pdvNombre,
+    COALESCE(p.codigo_centro_costo, 'N/A')    AS pdvNombre,
     CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(c.descripcion, '') ELSE '' END AS ciudad,
     CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(r.descripcion, '') ELSE '' END AS region,
     CASE WHEN cp.id_pdv IS NOT NULL THEN COALESCE(sup.nombres, '') ELSE '' END AS supervisor,
@@ -92,10 +92,10 @@ const BASE_SELECT = `
   INNER JOIN usuarios u          ON cp.id_usuario       = u.id_usuario
   LEFT JOIN departamentos d      ON u.id_departamento   = d.id_departamento
   LEFT JOIN pdvs p               ON cp.id_pdv           = p.id_pdv
-  LEFT JOIN ciudades c           ON p.id_ciudad         = c.id_ciudad
+  LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
+  LEFT JOIN ciudades c           ON zc.id_ciudad        = c.id_ciudad
   LEFT JOIN regiones r           ON c.id_region         = r.id_region
   LEFT JOIN supervisores sup     ON p.id_supervisor     = sup.id_supervisor
-  LEFT JOIN zonas_comerciales zc ON p.id_zona_comercial = zc.id_zona_comercial
   INNER JOIN estado_pedidos e    ON cp.id_estado_pedido = e.id_estado_pedido
   INNER JOIN detalle_pedidos dp  ON dp.id_pedido        = cp.id_pedido
   INNER JOIN suministros s       ON dp.id_suministro    = s.id_suministro
