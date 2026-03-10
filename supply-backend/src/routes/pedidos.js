@@ -9,6 +9,9 @@ const { pool }   = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
 const { createObjectCsvWriter } = require('csv-writer')
 const nodemailer = require('nodemailer')
+const PedidoRepository = require('../repositories/PedidoRepository')
+
+const pedidoRepository = new PedidoRepository()
 
 const transporter = nodemailer.createTransport({
   host:   process.env.MAIL_HOST,
@@ -81,12 +84,13 @@ router.post('/', requireAuth, async (req, res) => {
     
     if (esComercial) {
       const [pdvRows] = await conn.query(
-        `SELECT p.id_pdv, p.descripcion, p.direccion,
+        `SELECT p.id_pdv, p.codigo_centro_costo AS descripcion, p.direccion,
                 p.id_proveedor_principal,
-                z.zona AS ciudad,
+          c.descripcion AS ciudad,
                 gp.monto_autorizado AS cupo
          FROM pdvs p
          INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
+         INNER JOIN ciudades c ON z.id_ciudad = c.id_ciudad
          INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
          WHERE p.id_pdv = ? AND p.id_estado_pdv = 1`,
         [pdvId]
@@ -99,6 +103,13 @@ router.post('/', requireAuth, async (req, res) => {
       }
 
       pdv = pdvRows[0]
+
+      const inOrderWindow = await pedidoRepository.isPdvInOrderWindow(Number(pdvId), conn)
+      if (!inOrderWindow) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({ error: 'Fuera de ventana de pedido para esta zona' })
+      }
     } else if (hasDepartamentoProveedorRotacion) {
       // Para departamentos NO comerciales, calcular proveedor según rotación automática
       const mesActual = new Date().getMonth() + 1
@@ -148,15 +159,17 @@ router.post('/', requireAuth, async (req, res) => {
               SELECT sp.id_proveedor
               FROM suministros_precios sp
               WHERE sp.id_suministro = s.id_suministro
+                AND sp.fecha_vigencia_hasta IS NULL
                 AND (? IS NULL OR sp.id_proveedor = ?)
-              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio DESC
               LIMIT 1
             ),
             (
               SELECT sp.id_proveedor
               FROM suministros_precios sp
               WHERE sp.id_suministro = s.id_suministro
-              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+                AND sp.fecha_vigencia_hasta IS NULL
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio DESC
               LIMIT 1
             )
           ) AS proveedorId,
@@ -165,15 +178,17 @@ router.post('/', requireAuth, async (req, res) => {
               SELECT sp.precio_compra
               FROM suministros_precios sp
               WHERE sp.id_suministro = s.id_suministro
+                AND sp.fecha_vigencia_hasta IS NULL
                 AND (? IS NULL OR sp.id_proveedor = ?)
-              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio DESC
               LIMIT 1
             ),
             (
               SELECT sp.precio_compra
               FROM suministros_precios sp
               WHERE sp.id_suministro = s.id_suministro
-              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio ASC
+                AND sp.fecha_vigencia_hasta IS NULL
+              ORDER BY sp.precio_compra ASC, sp.id_suministro_precio DESC
               LIMIT 1
             ),
             0
@@ -780,43 +795,14 @@ router.post('/:id/aprobar', requireAuth, async (req, res) => {
         }
       }
       
-      // Obtener el ID del estado aprobado (soporta variantes como Aprobado/Aprobada)
-      const [[estadoAprobado]] = await conn.query(
-        "SELECT id_estado_pedido FROM estado_pedidos WHERE LOWER(descripcion) LIKE 'aprob%' LIMIT 1"
-      )
-      
-      if (!estadoAprobado) {
-        await conn.rollback()
-        conn.release()
-        return res.status(500).json({ error: 'Estado "Aprobado" no encontrado en la BD' })
-      }
-      
-      // Actualizar estado del pedido y observaciones opcionales (si la columna existe).
       const observacionesLimpias = String(observaciones || '').trim()
-      const [obsColumnRows] = await conn.query(
-        `SELECT COUNT(*) AS total
-         FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'cabecera_pedidos'
-           AND COLUMN_NAME = 'observaciones_aprobacion'`
-      )
-      const hasObsColumn = Number(obsColumnRows?.[0]?.total || 0) > 0
 
-      if (hasObsColumn) {
-        await conn.query(
-          `UPDATE cabecera_pedidos 
-           SET id_estado_pedido = ?, observaciones_aprobacion = ?
-           WHERE id_pedido = ?`,
-          [estadoAprobado.id_estado_pedido, observacionesLimpias || null, id]
-        )
-      } else {
-        await conn.query(
-          `UPDATE cabecera_pedidos 
-           SET id_estado_pedido = ?
-           WHERE id_pedido = ?`,
-          [estadoAprobado.id_estado_pedido, id]
-        )
-      }
+      // Regla de negocio centralizada en SP: valida stock y cambia estado en transacción.
+      await conn.query('CALL sp_aprobar_pedido(?, ?, ?)', [
+        Number(id),
+        Number(req.session.userId),
+        observacionesLimpias || null,
+      ])
       
       await conn.commit()
       conn.release()
