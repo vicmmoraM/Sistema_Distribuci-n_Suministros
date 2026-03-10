@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import { useDataRefresh } from '../context/DataRefreshContext'
 import { usePermissions } from '../hooks/usePermissions'
+import { useUIFeedback } from '../context/UIFeedbackContext'
 import api from '../api/axios'
 import Layout from '../components/Layout'
+import { createId } from '../utils/id'
 import '../style/Home.css'
 
 const ESTADO_BADGE = {
@@ -21,8 +23,10 @@ export default function Home() {
   const { isCollapsed } = useSidebar()
   const { refreshTriggers } = useDataRefresh()
   const { esComercial } = usePermissions()
+  const { notify } = useUIFeedback()
   const navigate = useNavigate()
   const { hash } = useLocation()
+  const pedidosAbortRef = useRef(null)
 
   // Determinar vista según el hash
   const vistaActual = hash === '#mis-pedidos' ? 'mis-pedidos' : 'nuevo-pedido'
@@ -66,24 +70,48 @@ export default function Home() {
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
-    if (esComercial) {
-      api.get('/catalogos/pdvs').then(r => {
-        setPdvs(r.data)
-        if (user?.login) {
-          const pdvDelUsuario = r.data.find(p =>
-            p.descripcion.toLowerCase() === user.login.toLowerCase()
-          )
-          if (pdvDelUsuario) {
-            setPdv(pdvDelUsuario)
-          }
+
+    let cancelled = false
+    const controller = new AbortController()
+
+    const loadCatalogosBase = async () => {
+      try {
+        const promises = [api.get('/catalogos/tipo-suministros', { signal: controller.signal })]
+        if (esComercial) {
+          promises.push(api.get('/catalogos/pdvs', { signal: controller.signal }))
         }
-      }).catch(() => { })
-    } else {
-      setPdvs([])
-      setPdv(null)
+
+        const results = await Promise.all(promises)
+        if (cancelled) return
+
+        setTipos(results[0].data || [])
+
+        if (esComercial && results[1]) {
+          const pdvData = results[1].data || []
+          setPdvs(pdvData)
+          if (user?.login) {
+            const pdvDelUsuario = pdvData.find((p) =>
+              p.descripcion.toLowerCase() === user.login.toLowerCase()
+            )
+            if (pdvDelUsuario) setPdv(pdvDelUsuario)
+          }
+        } else {
+          setPdvs([])
+          setPdv(null)
+        }
+      } catch (err) {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+        notify('No se pudo cargar el catalogo inicial.', 'error')
+      }
     }
-    api.get('/catalogos/tipo-suministros').then(r => setTipos(r.data)).catch(() => { })
-  }, [loading, user?.login, esComercial])
+
+    loadCatalogosBase()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [loading, user?.login, esComercial, notify])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
@@ -94,21 +122,38 @@ export default function Home() {
       setShowSuministroDropdown(false)
       return
     }
+
+    let cancelled = false
+    const controller = new AbortController()
     const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
-    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`)
+
+    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`, { signal: controller.signal })
       .then(r => {
+        if (cancelled) return
         setSuministros(r.data)
         setSuministroId('')
         setSuministroSearch('')
         setShowSuministroDropdown(false)
       })
-      .catch(() => { })
-  }, [tipoSeleccionado, pdvSeleccionado?.id_pdv])
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+        notify('No se pudo cargar la lista de suministros.', 'error')
+      })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [tipoSeleccionado, pdvSeleccionado?.id_pdv, notify])
 
   // 🔄 Recargar PDVs cuando se actualicen en Configuración
   useEffect(() => {
     if (loading || !esComercial) return
-    api.get('/catalogos/pdvs').then(r => {
+
+    let cancelled = false
+    const controller = new AbortController()
+    api.get('/catalogos/pdvs', { signal: controller.signal }).then(r => {
+      if (cancelled) return
       setPdvs(r.data)
       // Si había un PDV seleccionado, actualizar sus datos
       if (pdvSeleccionado) {
@@ -117,17 +162,38 @@ export default function Home() {
           setPdv(pdvActualizado)
         }
       }
-    }).catch(() => { })
-  }, [refreshTriggers.pdvs])
+    }).catch((err) => {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+      notify('No se pudo recargar la lista de PDVs.', 'error')
+    })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [refreshTriggers.pdvs, loading, esComercial, pdvSeleccionado?.id_pdv, notify])
 
   // 🔄 Recargar suministros cuando se actualicen en Configuración
   useEffect(() => {
     if (!tipoSeleccionado || loading) return
+
+    let cancelled = false
+    const controller = new AbortController()
     const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
-    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`)
-      .then(r => setSuministros(r.data))
-      .catch(() => { })
-  }, [refreshTriggers.suministros])
+    api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}`, { signal: controller.signal })
+      .then(r => {
+        if (!cancelled) setSuministros(r.data)
+      })
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+        notify('No se pudo actualizar el listado de suministros.', 'error')
+      })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [refreshTriggers.suministros, tipoSeleccionado, loading, pdvSeleccionado?.id_pdv, notify])
 
   const getSuministroLabel = (s) => `${s.descripcion} - $${Number(s.precio).toFixed(2)} `
 
@@ -155,7 +221,7 @@ export default function Home() {
     if (!sum) return
 
     setCarrito(prev => [...prev, {
-      id: Date.now(),
+      id: createId('cart-item'),
       suministroId: sum.id_suministro,
       suministroNombre: sum.descripcion,
       tipoId: tipo.id_tipo_suministro,
@@ -204,7 +270,11 @@ export default function Home() {
   }
 
   // Función para cargar pedidos (vista "Mis Pedidos")
-  const cargarPedidos = async () => {
+  const cargarPedidos = useCallback(async () => {
+    pedidosAbortRef.current?.abort()
+    const controller = new AbortController()
+    pedidosAbortRef.current = controller
+
     setCargandoPedidos(true)
     try {
       const params = { usuario: user?.login }
@@ -212,7 +282,10 @@ export default function Home() {
       if (vistaPedidos === 'aprobados') params.estado = 2
       if (vistaPedidos === 'rechazados') params.estado = 3
 
-      const { data } = await api.get('/reportes/pedidos', { params })
+      const { data } = await api.get('/reportes/pedidos', {
+        params,
+        signal: controller.signal,
+      })
 
       // Agrupar por pedidoId
       const pedidosMap = new Map()
@@ -240,20 +313,29 @@ export default function Home() {
         pedido.total += Number(row.precioUnitario) * Number(row.cantidad)
       })
 
-      setPedidos(Array.from(pedidosMap.values()))
+      if (!controller.signal.aborted) {
+        setPedidos(Array.from(pedidosMap.values()))
+      }
     } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
       console.error('Error cargando pedidos:', err)
+      notify('No se pudieron cargar tus pedidos.', 'error')
     } finally {
-      setCargandoPedidos(false)
+      if (!controller.signal.aborted) {
+        setCargandoPedidos(false)
+      }
     }
-  }
+  }, [user?.login, vistaPedidos, notify])
 
   // Cargar pedidos cuando cambia la vista a "Mis Pedidos"
   useEffect(() => {
     if (vistaActual === 'mis-pedidos' && !loading) {
       cargarPedidos()
     }
-  }, [vistaActual, vistaPedidos, loading])
+    return () => {
+      pedidosAbortRef.current?.abort()
+    }
+  }, [vistaActual, loading, cargarPedidos])
 
   const terminoBusqueda = filtroTexto.trim().toLowerCase()
   const montoMin = filtroMontoMin === '' ? null : Number(filtroMontoMin)

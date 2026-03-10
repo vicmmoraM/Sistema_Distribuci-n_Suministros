@@ -1,9 +1,10 @@
 // src/pages/Aprobaciones.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import { useLocation } from 'react-router-dom'
 import Layout from '../components/Layout'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import axios from '../api/axios'
 import '../style/Aprobaciones.css'
 
@@ -28,6 +29,9 @@ export default function Aprobaciones() {
   const [isEditingItems, setIsEditingItems] = useState(false)
   const [savingItems, setSavingItems] = useState(false)
   const [toast, setToast] = useState(null)
+  const [showRemoveItemModal, setShowRemoveItemModal] = useState(false)
+  const [pendingRemoveIndex, setPendingRemoveIndex] = useState(null)
+  const pedidosAbortRef = useRef(null)
   
   // Estados para filtros
   const [filters, setFilters] = useState({
@@ -53,35 +57,42 @@ export default function Aprobaciones() {
   const isDefault = pathname === '/aprobaciones'
   const shouldShowPedidos = isPedidos || isDefault
 
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }, [])
+
   // Cargar catálogos al montar el componente
   useEffect(() => {
+    let cancelled = false
+
     const loadCatalogos = async () => {
       try {
         const [deptRes, estadoRes] = await Promise.all([
           axios.get('/catalogos/departamentos'),
           axios.get('/catalogos/estados-pedido')
         ])
-        setDepartamentos(deptRes.data || [])
-        setEstados(estadoRes.data || [])
+        if (!cancelled) {
+          setDepartamentos(deptRes.data || [])
+          setEstados(estadoRes.data || [])
+        }
       } catch (error) {
         console.error('Error cargando catálogos:', error)
       }
     }
+
     loadCatalogos()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
-  // Cargar pedidos cuando cambian los filtros o la página
-  useEffect(() => {
-    console.log('useEffect ejecutado - shouldShowPedidos:', shouldShowPedidos, 'pathname:', pathname)
-    if (shouldShowPedidos) {
-      console.log('Llamando a loadPedidos()...')
-      loadPedidos()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, page, shouldShowPedidos])
+  const loadPedidos = useCallback(async () => {
+    pedidosAbortRef.current?.abort()
+    const controller = new AbortController()
+    pedidosAbortRef.current = controller
 
-  // Función para cargar pedidos con filtros
-  const loadPedidos = async () => {
     setLoading(true)
     try {
       const params = {
@@ -95,27 +106,39 @@ export default function Aprobaciones() {
       if (filters.estado) params.estado = filters.estado
       if (filters.fechaDesde) params.fechaDesde = filters.fechaDesde
       if (filters.fechaHasta) params.fechaHasta = filters.fechaHasta
-      
-      console.log('Cargando pedidos con params:', params)
-      const response = await axios.get('/pedidos/aprobaciones', { params })
-      console.log('Respuesta del servidor:', response.data)
+
+      const response = await axios.get('/pedidos/aprobaciones', {
+        params,
+        signal: controller.signal,
+      })
+
+      if (controller.signal.aborted) return
       setPedidos(response.data.data || [])
       setTotalPages(response.data.totalPages || 1)
       setTotal(response.data.total || 0)
     } catch (error) {
+      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+        return
+      }
       console.error('Error cargando pedidos:', error)
-      console.error('Detalle del error:', error.response?.data)
       showToast('Error al cargar pedidos', 'error')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
     }
-  }
+  }, [filters, page, showToast])
 
-  // Mostrar notificación toast
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  // Cargar pedidos cuando cambian los filtros o la página
+  useEffect(() => {
+    if (shouldShowPedidos) {
+      loadPedidos()
+    }
+
+    return () => {
+      pedidosAbortRef.current?.abort()
+    }
+  }, [shouldShowPedidos, loadPedidos])
 
   // Manejar cambio de filtros
   const handleFilterChange = (key, value) => {
@@ -221,11 +244,8 @@ export default function Aprobaciones() {
     })
   }
 
-  const handleRemoveItem = (index) => {
-    const confirmed = window.confirm('¿Seguro que deseas eliminar este producto del pedido?')
-    if (!confirmed) return
-
-    setSelectedPedido(prev => {
+  const removeItem = (index) => {
+    setSelectedPedido((prev) => {
       if (!prev?.items) return prev
 
       const updatedItems = prev.items.filter((_, idx) => idx !== index)
@@ -235,6 +255,19 @@ export default function Aprobaciones() {
         total: recalculateTotal(updatedItems),
       }
     })
+  }
+
+  const handleRemoveItem = (index) => {
+    setPendingRemoveIndex(index)
+    setShowRemoveItemModal(true)
+  }
+
+  const confirmRemoveItem = () => {
+    if (typeof pendingRemoveIndex === 'number') {
+      removeItem(pendingRemoveIndex)
+    }
+    setPendingRemoveIndex(null)
+    setShowRemoveItemModal(false)
   }
 
   // Iniciar aprobación
@@ -823,6 +856,19 @@ export default function Aprobaciones() {
           <span>{toast.message}</span>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={showRemoveItemModal}
+        title="Eliminar producto"
+        message="¿Seguro que deseas eliminar este producto del pedido?"
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={confirmRemoveItem}
+        onCancel={() => {
+          setPendingRemoveIndex(null)
+          setShowRemoveItemModal(false)
+        }}
+      />
 
       <style>{`
         @media (max-width: 768px) {

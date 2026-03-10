@@ -1,8 +1,9 @@
 // src/pages/Reportes.jsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSidebar } from '../context/SidebarContext'
 import { useDataRefresh } from '../context/DataRefreshContext'
+import { useUIFeedback } from '../context/UIFeedbackContext'
 import api from '../api/axios'
 import Layout from '../components/Layout'
 import '../style/Reportes.css'
@@ -87,6 +88,8 @@ export default function Reportes() {
   const { loading: authLoading } = useAuth()
   const { isCollapsed } = useSidebar()
   const { refreshTriggers } = useDataRefresh()
+  const { notify } = useUIFeedback()
+  const reportesAbortRef = useRef(null)
 
   const anioActual = new Date().getFullYear()
   const mesActual  = new Date().getMonth() + 1
@@ -117,36 +120,70 @@ export default function Reportes() {
 
   useEffect(() => {
     if (authLoading) return
-    api.get('/catalogos/pdvs').then(r => setPdvs(r.data)).catch(() => {})
-    api.get('/catalogos/estados-pedido').then(r => setEstados(r.data)).catch(() => {})
-    api.get('/catalogos/tipo-suministros').then(r => setTiposSuministro(r.data)).catch(() => {})
-  }, [authLoading])
+
+    let cancelled = false
+    const controller = new AbortController()
+
+    Promise.all([
+      api.get('/catalogos/pdvs', { signal: controller.signal }),
+      api.get('/catalogos/estados-pedido', { signal: controller.signal }),
+      api.get('/catalogos/tipo-suministros', { signal: controller.signal }),
+    ]).then(([pdvsRes, estadosRes, tiposRes]) => {
+      if (cancelled) return
+      setPdvs(pdvsRes.data || [])
+      setEstados(estadosRes.data || [])
+      setTiposSuministro(tiposRes.data || [])
+    }).catch((err) => {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+      notify('No se pudieron cargar los catalogos de reportes.', 'error')
+    })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [authLoading, notify])
 
   const cargarPedidos = useCallback(async (page = 1) => {
+    reportesAbortRef.current?.abort()
+    const controller = new AbortController()
+    reportesAbortRef.current = controller
+
     setCargando(true)
     setError(null)
     try {
       const params = { ...buildParams(filtros), page, limit: 30 }
-      const { data } = await api.get('/reportes/pedidos', { params })
+      const { data } = await api.get('/reportes/pedidos', {
+        params,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) return
       setPedidos(agruparPorPedido(data.data))
       setPaginacion({ total: data.total, page: data.page, totalPages: data.totalPages })
-    } catch {
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
       setError('Error al cargar los reportes.')
+      notify('Error al cargar los reportes.', 'error')
     } finally {
-      setCargando(false)
+      if (!controller.signal.aborted) {
+        setCargando(false)
+      }
     }
-  }, [filtros])
+  }, [filtros, notify])
 
   useEffect(() => {
     if (!authLoading) cargarPedidos(1)
+    return () => {
+      reportesAbortRef.current?.abort()
+    }
   }, [authLoading, cargarPedidos])
 
   // 🔄 Escuchar cambios cuando se actualizan datos en Configuración
   useEffect(() => {
-    if (!authLoading && !cargando) {
+    if (!authLoading) {
       cargarPedidos(1)
     }
-  }, [refreshTriggers.pdvs, refreshTriggers.reportes])
+  }, [refreshTriggers.pdvs, refreshTriggers.reportes, authLoading, cargarPedidos])
 
   function handleFiltroChange(e) {
     const { name, value } = e.target
