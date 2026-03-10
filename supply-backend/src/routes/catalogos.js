@@ -32,11 +32,13 @@ router.get('/pdvs', requireAuth, async (req, res) => {
         p.codigo_centro_costo AS descripcion,
         p.direccion,
         c.descripcion AS ciudad,
+        COALESCE(r.descripcion, 'Sin región') AS region,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor,
         gp.monto_autorizado AS cupo
       FROM pdvs p
       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
-      INNER JOIN ciudades c ON z.id_ciudad = c.id_ciudad
+      LEFT JOIN ciudades c ON p.id_ciudad = c.id_ciudad
+      LEFT JOIN regiones r ON r.id_region = c.id_region
       INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
       LEFT JOIN proveedores pr       ON p.id_proveedor_principal = pr.id_proveedor
       WHERE p.id_estado_pdv = 1

@@ -12,6 +12,7 @@ const pedidosRoutes   = require('./routes/pedidos');
 const pedidosAprobacionExampleRoutes = require('./routes/pedidos.aprobacion.example');
 const reportesRoutes  = require('./routes/reportes');
 const adminRoutes     = require('./routes/admin');
+const gestionRoutes   = require('./routes/gestion');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -54,6 +55,7 @@ app.use('/api/pedidos',   pedidosRoutes);
 app.use('/api/pedidos-aprobacion-example', pedidosAprobacionExampleRoutes);
 app.use('/api/reportes',  reportesRoutes);
 app.use('/api/admin',     adminRoutes);
+app.use('/api/gestion',   gestionRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

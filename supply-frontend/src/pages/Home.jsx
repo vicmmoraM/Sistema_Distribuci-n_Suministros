@@ -146,7 +146,7 @@ export default function Home() {
     }
   }, [tipoSeleccionado, pdvSeleccionado?.id_pdv, notify])
 
-  // 🔄 Recargar PDVs cuando se actualicen en Configuración
+  //  Recargar PDVs cuando se actualicen en Configuración
   useEffect(() => {
     if (loading || !esComercial) return
 
@@ -383,7 +383,7 @@ export default function Home() {
                 <span>{esComercial ? 'Punto de venta' : 'Departamento'}</span>
                 <img
                   src="/images/LOGO OFICIAL FC COMPLETO FONDO TRANSPARENTE.png"
-                  alt="Logo Fundación Crisfe"
+                  alt="Logo Farmcorp"
                   className="home-logo"
                 />
               </h2>

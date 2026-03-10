@@ -12,6 +12,7 @@ import {
   EMPTY_USER_FORM,
   EMPTY_SUPPLY_FORM,
   EMPTY_PDV_FORM,
+  EMPTY_DEPARTMENT_FORM,
 } from './configuracion/constants'
 import {
   EditIcon,
@@ -29,6 +30,7 @@ import UserModal from './configuracion/modals/UserModal'
 import SupplyModal from './configuracion/modals/SupplyModal'
 import PdvModal from './configuracion/modals/PdvModal'
 import CategoryModal from './configuracion/modals/CategoryModal'
+import DepartmentModal from './configuracion/modals/DepartmentModal'
 import '../style/Configuracion.css'
 
 export default function Configuracion() {
@@ -55,6 +57,8 @@ export default function Configuracion() {
     zonasComerciales: [],
     gruposPdvs: [],
     estadosPdvs: [],
+    supervisores: [],
+    regiones: [],
   })
 
   const [users, setUsers] = useState([])
@@ -72,7 +76,7 @@ export default function Configuracion() {
   const [editingSupplyId, setEditingSupplyId] = useState(null)
 
   const [pdvs, setPdvs] = useState([])
-  const [pdvFilters, setPdvFilters] = useState({ search: '', zone: '', provider: '' })
+  const [pdvFilters, setPdvFilters] = useState({ search: '', region: '', zone: '', provider: '' })
   const [pdvModalOpen, setPdvModalOpen] = useState(false)
   const [pdvModalMode, setPdvModalMode] = useState('create')
   const [pdvForm, setPdvForm] = useState(EMPTY_PDV_FORM)
@@ -86,6 +90,14 @@ export default function Configuracion() {
   const [editingCategoryId, setEditingCategoryId] = useState(null)
 
   const [roles, setRoles] = useState([])
+
+  const [departments, setDepartments] = useState([])
+  const [departmentFilters, setDepartmentFilters] = useState({ search: '' })
+  const [departmentModalOpen, setDepartmentModalOpen] = useState(false)
+  const [departmentModalMode, setDepartmentModalMode] = useState('create')
+  const [departmentForm, setDepartmentForm] = useState(EMPTY_DEPARTMENT_FORM)
+  const [editingDepartmentId, setEditingDepartmentId] = useState(null)
+
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
     title: '',
@@ -134,6 +146,7 @@ export default function Configuracion() {
   const loadPdvs = async () => {
     const params = {}
     if (pdvFilters.search) params.search = pdvFilters.search
+    if (pdvFilters.region) params.region = pdvFilters.region
     if (pdvFilters.zone) params.zone = pdvFilters.zone
     if (pdvFilters.provider) params.provider = pdvFilters.provider
     const res = await api.get('/admin/pdvs', { params })
@@ -147,10 +160,17 @@ export default function Configuracion() {
     setCategories(res.data)
   }
 
+  const loadDepartments = async () => {
+    const params = {}
+    if (departmentFilters.search) params.search = departmentFilters.search
+    const res = await api.get('/admin/departamentos', { params })
+    setDepartments(res.data)
+  }
+
   const loadAll = async () => {
     setLoading(true)
     try {
-      await Promise.all([loadOverview(), loadMeta(), loadUsers(), loadSupplies(), loadRoles(), loadPdvs(), loadCategories()])
+      await Promise.all([loadOverview(), loadMeta(), loadUsers(), loadSupplies(), loadRoles(), loadPdvs(), loadCategories(), loadDepartments()])
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudo cargar el panel de configuración.', 'error')
     } finally {
@@ -172,11 +192,15 @@ export default function Configuracion() {
 
   useEffect(() => {
     if (!loading) loadPdvs()
-  }, [pdvFilters.search, pdvFilters.zone, pdvFilters.provider])
+  }, [pdvFilters.search, pdvFilters.region, pdvFilters.zone, pdvFilters.provider])
 
   useEffect(() => {
     if (!loading) loadCategories()
   }, [categoryFilters.search])
+
+  useEffect(() => {
+    if (!loading) loadDepartments()
+  }, [departmentFilters.search])
 
   const lowStockCount = useMemo(() => supplies.filter(s => Number(s.stock) <= 10).length, [supplies])
 
@@ -279,6 +303,14 @@ export default function Configuracion() {
     setCategoryForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleDepartmentFilterChange = (key, value) => {
+    setDepartmentFilters((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleDepartmentFormChange = (key, value) => {
+    setDepartmentForm((prev) => ({ ...prev, [key]: value }))
+  }
+
   const openCreateSupply = () => {
     setSupplyModalMode('create')
     setEditingSupplyId(null)
@@ -371,10 +403,13 @@ export default function Configuracion() {
     setPdvForm({
       descripcion: pdv.descripcion,
       direccion: pdv.direccion || '',
-      id_grupo_pdv: pdv.id_grupo_pdv || '',
-      id_estado_pdv: pdv.id_estado_pdv || '',
-      id_zona_comercial: pdv.id_zona_comercial || '',
-      id_proveedor_principal: pdv.id_proveedor_principal || '',
+      id_ciudad: String(pdv.id_ciudad || ''),
+      id_grupo_pdv: String(pdv.id_grupo_pdv || ''),
+      id_estado_pdv: String(pdv.id_estado_pdv || ''),
+      id_zona_comercial: String(pdv.id_zona_comercial || ''),
+      id_region: String(pdv.id_region || ''),
+      id_proveedor_principal: String(pdv.id_proveedor_principal || ''),
+      id_supervisor: String(pdv.id_supervisor || ''),
     })
     setPdvModalOpen(true)
   }
@@ -393,8 +428,12 @@ export default function Configuracion() {
         showToast('PDV creado correctamente.')
       } else {
         await api.put(`/admin/pdvs/${editingPdvId}`, {
+          direccion: pdvForm.direccion,
+          id_ciudad: pdvForm.id_ciudad,
           id_proveedor_principal: pdvForm.id_proveedor_principal,
-          id_grupo_pdv: pdvForm.id_grupo_pdv
+          id_grupo_pdv: pdvForm.id_grupo_pdv,
+          id_zona_comercial: pdvForm.id_zona_comercial,
+          id_supervisor: pdvForm.id_supervisor
         })
         showToast('PDV actualizado correctamente.')
       }
@@ -458,6 +497,66 @@ export default function Configuracion() {
     })
   }
 
+  const openCreateDepartment = () => {
+    setDepartmentModalMode('create')
+    setEditingDepartmentId(null)
+    setDepartmentForm(EMPTY_DEPARTMENT_FORM)
+    setDepartmentModalOpen(true)
+  }
+
+  const openEditDepartment = (department) => {
+    setDepartmentModalMode('edit')
+    setEditingDepartmentId(department.id_departamento)
+    setDepartmentForm({
+      descripcion: department.descripcion,
+      id_proveedor: String(department.id_proveedor || ''),
+      presupuesto_autorizado: String(department.presupuesto_autorizado || ''),
+    })
+    setDepartmentModalOpen(true)
+  }
+
+  const submitDepartment = async (event) => {
+    event.preventDefault()
+    try {
+      const payload = {
+        descripcion: departmentForm.descripcion,
+        id_proveedor: departmentForm.id_proveedor || null,
+        presupuesto_autorizado: departmentForm.presupuesto_autorizado ? Number(departmentForm.presupuesto_autorizado) : null,
+      }
+
+      if (departmentModalMode === 'create') {
+        await api.post('/admin/departamentos', payload)
+        showToast('Departamento creado correctamente.')
+      } else {
+        await api.put(`/admin/departamentos/${editingDepartmentId}`, payload)
+        showToast('Departamento actualizado correctamente.')
+      }
+
+      setDepartmentModalOpen(false)
+      setDepartmentForm(EMPTY_DEPARTMENT_FORM)
+      await Promise.all([loadDepartments(), loadMeta(), loadOverview()])
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo guardar el departamento.', 'error')
+    }
+  }
+
+  const deleteDepartment = async (department) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar departamento',
+      message: `¿Eliminar el departamento "${department.descripcion}"?`,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/admin/departamentos/${department.id_departamento}`)
+          showToast('Departamento eliminado correctamente.')
+          await Promise.all([loadDepartments(), loadMeta(), loadOverview()])
+        } catch (err) {
+          showToast(err.response?.data?.error || 'No se pudo eliminar el departamento.', 'error')
+        }
+      },
+    })
+  }
+
   return (
     <div className="configuracion-container">
       <Layout />
@@ -507,6 +606,7 @@ export default function Configuracion() {
                     onCreateSupply={openCreateSupply}
                     onCreatePdv={openCreatePdv}
                     onCreateCategory={openCreateCategory}
+                    onCreateDepartment={openCreateDepartment}
                     supplyFilters={supplyFilters}
                     onSupplyFilterChange={handleSupplyFilterChange}
                     categoriesMeta={meta.categorias}
@@ -517,6 +617,7 @@ export default function Configuracion() {
                     onDeleteSupply={deleteSupply}
                     pdvFilters={pdvFilters}
                     onPdvFilterChange={handlePdvFilterChange}
+                    regionsMeta={meta.regiones || []}
                     zonesMeta={meta.zonasComerciales}
                     pdvs={pdvs}
                     onEditPdv={openEditPdv}
@@ -525,6 +626,11 @@ export default function Configuracion() {
                     onCategoryFilterChange={handleCategoryFilterChange}
                     onEditCategory={openEditCategory}
                     onDeleteCategory={deleteCategory}
+                    departments={departments}
+                    departmentFilters={departmentFilters}
+                    onDepartmentFilterChange={handleDepartmentFilterChange}
+                    onEditDepartment={openEditDepartment}
+                    onDeleteDepartment={deleteDepartment}
                     EditIcon={EditIcon}
                     TrashIcon={TrashIcon}
                     PlusIcon={PlusIcon}
@@ -575,10 +681,13 @@ export default function Configuracion() {
         isOpen={pdvModalOpen}
         mode={pdvModalMode}
         form={pdvForm}
+        cities={meta.ciudades || []}
         zones={meta.zonasComerciales}
         states={meta.estadosPdvs}
         groups={meta.gruposPdvs}
         providers={meta.proveedores}
+        supervisores={meta.supervisores || []}
+        regiones={meta.regiones || []}
         onClose={cancelPdvModal}
         onSubmit={submitPdv}
         onChange={handlePdvFormChange}
@@ -593,6 +702,18 @@ export default function Configuracion() {
         onClose={() => setCategoryModalOpen(false)}
         onSubmit={submitCategory}
         onChange={handleCategoryFormChange}
+        XIcon={XIcon}
+        CheckIcon={CheckIcon}
+      />
+
+      <DepartmentModal
+        isOpen={departmentModalOpen}
+        mode={departmentModalMode}
+        form={departmentForm}
+        providers={meta.proveedores}
+        onClose={() => setDepartmentModalOpen(false)}
+        onSubmit={submitDepartment}
+        onChange={handleDepartmentFormChange}
         XIcon={XIcon}
         CheckIcon={CheckIcon}
       />

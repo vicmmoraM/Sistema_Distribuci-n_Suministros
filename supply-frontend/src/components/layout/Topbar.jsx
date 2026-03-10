@@ -19,7 +19,7 @@ export default function Topbar({
           <img src="images/LOGO FC SINTETIZADO FONDO BLANCO.jpg" alt="FarmCorp Logo" />
         </div>
         <div className="navbar-title">
-          <h1>Solicitud de Suministros</h1>
+          <h1>Sistema Integral de Adquisiciones FC</h1>
           <p>Sistema de Distribución de Suministros</p>
         </div>
       </div>

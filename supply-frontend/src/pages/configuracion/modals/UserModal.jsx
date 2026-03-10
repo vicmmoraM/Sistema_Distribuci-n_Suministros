@@ -34,9 +34,14 @@ export default function UserModal({
             {departments.map((department) => <option key={department.id_departamento} value={department.id_departamento}>{department.descripcion}</option>)}
           </select>
           {mode === 'edit' && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', gridColumn: '1 / -1' }}>
-              <input type="checkbox" checked={form.activo} onChange={(e) => onChange('activo', e.target.checked)} />
-              <span>Usuario activo</span>
+            <label className="admin-simple-check-field">
+              <input
+                type="checkbox"
+                checked={form.activo}
+                onChange={(e) => onChange('activo', e.target.checked)}
+                className="admin-simple-check-input"
+              />
+              <span className="admin-simple-check-label">Usuario activo</span>
             </label>
           )}
           <div className="admin-modal-actions">

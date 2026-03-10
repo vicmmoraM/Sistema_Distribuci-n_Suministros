@@ -12,6 +12,39 @@ const nodemailer = require('nodemailer')
 const PedidoRepository = require('../repositories/PedidoRepository')
 
 const pedidoRepository = new PedidoRepository()
+const outsideOrderWindowLogPath = path.resolve(__dirname, '../../../temp_files/outside-order-window.log')
+
+async function logOutsideOrderWindowAttempt({ req, pdv, orderWindow, items }) {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    userLogin: req.session?.userlogin || null,
+    userId: req.session?.userId || null,
+    departmentId: req.session?.departamento || null,
+    pdvId: pdv?.id_pdv || null,
+    pdvCodigo: pdv?.descripcion || null,
+    zona: pdv?.zona || orderWindow?.zona || null,
+    codigoZona: pdv?.codigo_zona || orderWindow?.codigo_zona || null,
+    ciudad: pdv?.ciudad || null,
+    region: pdv?.region || null,
+    windowStartDay: orderWindow?.dia_inicio || null,
+    windowEndDay: orderWindow?.dia_fin || null,
+    attemptedItems: Array.isArray(items)
+      ? items.map((item) => ({
+          suministroId: item?.suministroId || null,
+          cantidad: item?.cantidad || null,
+        }))
+      : [],
+  }
+
+  try {
+    await fs.promises.mkdir(path.dirname(outsideOrderWindowLogPath), { recursive: true })
+    await fs.promises.appendFile(outsideOrderWindowLogPath, `${JSON.stringify(payload)}\n`, 'utf8')
+  } catch (logErr) {
+    console.error('No se pudo escribir log de pedido fuera de ventana:', logErr.message)
+  }
+
+  console.warn('Pedido fuera de ventana detectado:', payload)
+}
 
 const transporter = nodemailer.createTransport({
   host:   process.env.MAIL_HOST,
@@ -86,11 +119,15 @@ router.post('/', requireAuth, async (req, res) => {
       const [pdvRows] = await conn.query(
         `SELECT p.id_pdv, p.codigo_centro_costo AS descripcion, p.direccion,
                 p.id_proveedor_principal,
+          z.zona,
+          z.codigo_zona,
           c.descripcion AS ciudad,
+          r.descripcion AS region,
                 gp.monto_autorizado AS cupo
          FROM pdvs p
          INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
-         INNER JOIN ciudades c ON z.id_ciudad = c.id_ciudad
+         LEFT JOIN ciudades c ON p.id_ciudad = c.id_ciudad
+         LEFT JOIN regiones r ON r.id_region = c.id_region
          INNER JOIN grupo_pdvs gp       ON p.id_grupo_pdv = gp.id_grupo_pdv
          WHERE p.id_pdv = ? AND p.id_estado_pdv = 1`,
         [pdvId]
@@ -106,9 +143,25 @@ router.post('/', requireAuth, async (req, res) => {
 
       const inOrderWindow = await pedidoRepository.isPdvInOrderWindow(Number(pdvId), conn)
       if (!inOrderWindow) {
+        const orderWindow = await pedidoRepository.getPdvOrderWindow(Number(pdvId), conn)
+        await logOutsideOrderWindowAttempt({
+          req,
+          pdv,
+          orderWindow,
+          items,
+        })
         await conn.rollback()
         conn.release()
-        return res.status(400).json({ error: 'Fuera de ventana de pedido para esta zona' })
+
+        if (orderWindow) {
+          return res.status(400).json({
+            error: `No se pudo realizar el pedido. Las fechas habilitadas para esta zona son del ${orderWindow.dia_inicio} al ${orderWindow.dia_fin} de cada mes.`,
+          })
+        }
+
+        return res.status(400).json({
+          error: 'No se pudo realizar el pedido. Esta zona no tiene una ventana de pedido configurada.',
+        })
       }
     } else if (hasDepartamentoProveedorRotacion) {
       // Para departamentos NO comerciales, calcular proveedor según rotación automática

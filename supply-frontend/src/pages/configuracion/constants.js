@@ -9,6 +9,7 @@ export const SUPPLIES_TABS = [
   { key: 'supplies-list', label: 'Suministros' },
   { key: 'pdv-providers', label: 'PDVs - Proveedores' },
   { key: 'categories', label: 'Categorias' },
+  { key: 'departamentos', label: 'Departamentos' },
 ];
 
 export const EMPTY_USER_FORM = {
@@ -34,8 +35,17 @@ export const EMPTY_SUPPLY_FORM = {
 export const EMPTY_PDV_FORM = {
   descripcion: '',
   direccion: '',
+  id_ciudad: '',
   id_grupo_pdv: '',
   id_estado_pdv: '',
   id_zona_comercial: '',
   id_proveedor_principal: '',
+  id_region: '',
+  id_supervisor: '',
+};
+
+export const EMPTY_DEPARTMENT_FORM = {
+  descripcion: '',
+  id_proveedor: '',
+  presupuesto_autorizado: '',
 };

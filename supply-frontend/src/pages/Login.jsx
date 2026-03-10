@@ -135,7 +135,7 @@ export default function Login() {
             />
           </div>
           <div className="login-brand text-center">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Sistema de Suministros</h1>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Sistema Integral de Adquisiciones FC</h1>
           </div>
         </div>
 

@@ -21,6 +21,26 @@ class PedidoRepository {
     return rows.length > 0;
   }
 
+  async getPdvOrderWindow(idPdv, conn = null) {
+    const executor = conn || this.pool;
+    const [rows] = await executor.query(
+      `SELECT
+         zvp.dia_inicio,
+         zvp.dia_fin,
+         z.zona,
+         z.codigo_zona
+       FROM zona_ventanas_pedido zvp
+       INNER JOIN pdvs p ON p.id_zona_comercial = zvp.id_zona_comercial
+       INNER JOIN zonas_comerciales z ON z.id_zona_comercial = p.id_zona_comercial
+       WHERE p.id_pdv = ?
+         AND zvp.activo = 1
+       LIMIT 1`,
+      [idPdv]
+    );
+
+    return rows[0] || null;
+  }
+
   async getPedidoById(idPedido) {
     const [rows] = await this.pool.query(
       `SELECT id_pedido, id_estado_pedido

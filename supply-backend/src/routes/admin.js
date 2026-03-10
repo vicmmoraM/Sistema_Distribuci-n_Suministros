@@ -3,6 +3,7 @@ const router = express.Router()
 const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
 const bcrypt = require('bcrypt')
+const adminDepartamentosRoutes = require('./admin/departamentos')
 
 async function requireAdminAccess(req, res, next) {
   try {
@@ -30,6 +31,7 @@ async function requireAdminAccess(req, res, next) {
 }
 
 router.use(requireAuth, requireAdminAccess)
+router.use(adminDepartamentosRoutes)
 
 router.get('/meta', async (req, res) => {
   try {
@@ -51,14 +53,23 @@ router.get('/meta', async (req, res) => {
     const [zonasComerciales] = await pool.query(
       'SELECT id_zona_comercial, zona, codigo_zona FROM zonas_comerciales ORDER BY zona ASC'
     )
+    const [ciudades] = await pool.query(
+      'SELECT id_ciudad, id_region, descripcion FROM ciudades ORDER BY descripcion ASC'
+    )
     const [gruposPdvs] = await pool.query(
       'SELECT id_grupo_pdv, descripcion, monto_autorizado FROM grupo_pdvs ORDER BY descripcion ASC'
     )
     const [estadosPdvs] = await pool.query(
       'SELECT id_estado_pdv, descripcion FROM estado_pdvs ORDER BY descripcion ASC'
     )
+    const [supervisores] = await pool.query(
+      'SELECT id_supervisor, nombres FROM supervisores WHERE activo = 1 ORDER BY nombres ASC'
+    )
+    const [regiones] = await pool.query(
+      'SELECT id_region, descripcion FROM regiones ORDER BY descripcion ASC'
+    )
 
-    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, gruposPdvs, estadosPdvs })
+    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, ciudades, gruposPdvs, estadosPdvs, supervisores, regiones })
   } catch (err) {
     console.error('Error cargando metadatos admin:', err.message)
     return res.status(500).json({ error: 'Error al cargar metadatos administrativos.' })
@@ -483,7 +494,7 @@ router.put('/roles/:id/permissions', async (req, res) => {
 // =====================================================
 
 router.get('/pdvs', async (req, res) => {
-  const { search = '', zone = '', provider = '' } = req.query
+  const { search = '', region = '', zone = '', provider = '' } = req.query
 
   try {
     const params = []
@@ -492,6 +503,11 @@ router.get('/pdvs', async (req, res) => {
     if (search) {
       conditions.push('(p.codigo_centro_costo LIKE ? OR p.direccion LIKE ?)')
       params.push(`%${search}%`, `%${search}%`)
+    }
+
+    if (region) {
+      conditions.push('c.id_region = ?')
+      params.push(Number(region))
     }
 
     if (zone) {
@@ -511,18 +527,27 @@ router.get('/pdvs', async (req, res) => {
         p.id_pdv,
         p.codigo_centro_costo AS descripcion,
         p.direccion,
+        p.id_ciudad,
         p.id_proveedor_principal,
         p.id_grupo_pdv,
         p.id_estado_pdv,
         p.id_zona_comercial,
+        p.id_supervisor,
+        c.id_region,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
+        COALESCE(c.descripcion, 'Sin ciudad') AS ciudad,
+        COALESCE(r.descripcion, 'Sin región') AS region,
         zc.zona AS zona_comercial,
         ep.descripcion AS estado,
         gp.descripcion AS grupo,
-        gp.monto_autorizado
+        gp.monto_autorizado,
+        COALESCE(sv.nombres, 'Sin supervisor') AS supervisor
       FROM pdvs p
       LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
       INNER JOIN zonas_comerciales zc ON zc.id_zona_comercial = p.id_zona_comercial
+      LEFT JOIN ciudades c ON c.id_ciudad = p.id_ciudad
+      LEFT JOIN regiones r ON r.id_region = c.id_region
+      LEFT JOIN supervisores sv ON sv.id_supervisor = p.id_supervisor
       INNER JOIN estado_pdvs ep ON ep.id_estado_pdv = p.id_estado_pdv
       INNER JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
       ${whereClause}
@@ -569,7 +594,7 @@ router.post('/pdvs', async (req, res) => {
 
 router.put('/pdvs/:id', async (req, res) => {
   const pdvId = Number(req.params.id)
-  const { id_proveedor_principal, id_grupo_pdv } = req.body
+  const { id_proveedor_principal, id_grupo_pdv, id_ciudad, direccion, id_zona_comercial, id_supervisor } = req.body
 
   if (!id_grupo_pdv) {
     return res.status(400).json({ error: 'El grupo del PDV es obligatorio.' })
@@ -577,10 +602,13 @@ router.put('/pdvs/:id', async (req, res) => {
 
   try {
     const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
+    const ciudadValue = id_ciudad === null || id_ciudad === '' ? null : Number(id_ciudad)
+    const zonaValue = id_zona_comercial === null || id_zona_comercial === '' ? null : Number(id_zona_comercial)
+    const supervisorValue = id_supervisor === null || id_supervisor === '' ? null : Number(id_supervisor)
 
     await pool.query(
-      'UPDATE pdvs SET id_proveedor_principal = ?, id_grupo_pdv = ? WHERE id_pdv = ?',
-      [proveedorValue, Number(id_grupo_pdv), pdvId]
+      'UPDATE pdvs SET id_proveedor_principal = ?, id_grupo_pdv = ?, id_ciudad = ?, direccion = ?, id_zona_comercial = ?, id_supervisor = ? WHERE id_pdv = ?',
+      [proveedorValue, Number(id_grupo_pdv), ciudadValue, direccion || null, zonaValue, supervisorValue, pdvId]
     )
 
     return res.json({ message: 'PDV actualizado correctamente.' })

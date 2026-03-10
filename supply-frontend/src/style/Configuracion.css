@@ -307,6 +307,30 @@
   margin-bottom: 0.75rem;
 }
 
+.admin-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-excel-btn {
+  border-radius: 0.4rem;
+  border: 1px solid #15803d;
+  background: #16a34a;
+  color: #ffffff;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-excel-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: #15803d;
+  border-color: #166534;
+}
+
 .admin-panel-header h2 {
   margin: 0;
   font-size: 0.95rem;
@@ -323,6 +347,10 @@
 
 .admin-filters-supplies {
   grid-template-columns: 1fr 180px 180px 160px;
+}
+
+.admin-filters-pdvs {
+  grid-template-columns: minmax(180px, 240px) repeat(3, minmax(150px, 1fr));
 }
 
 .admin-filters input,
@@ -399,6 +427,61 @@
   vertical-align: middle;
   word-wrap: break-word;
   overflow-wrap: break-word;
+}
+
+.admin-pagination {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #f9fafb;
+  padding: 0.6rem 0.75rem;
+}
+
+.admin-pagination-info {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #4b5563;
+}
+
+.admin-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.admin-page-btn {
+  border-radius: 0.4rem;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 0.35rem 0.6rem;
+  min-width: 32px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.admin-page-btn:hover:not(:disabled) {
+  border-color: #2c2f88;
+  color: #2c2f88;
+}
+
+.admin-page-btn.active {
+  background: #2c2f88;
+  border-color: #2c2f88;
+  color: #ffffff;
+}
+
+.admin-page-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Asegurar ancho suficiente para la columna de acciones */
@@ -521,6 +604,21 @@
   margin-bottom: 0.5rem;
 }
 
+.admin-modal-field-full {
+  grid-column: 1 / -1;
+}
+
+.admin-modal-field-half {
+  grid-column: span 1;
+}
+
+/* Cuando el grid está en 2 columnas, hacer que half sea visible */
+@supports (display: grid) {
+  .admin-form-grid > .admin-modal-field-half {
+    grid-column: span 1;
+  }
+}
+
 .admin-modal-label {
   display: flex;
   align-items: center;
@@ -567,6 +665,27 @@
   font-size: 0.75rem;
   color: #6b7280;
   font-style: italic;
+}
+
+.admin-simple-check-field {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+}
+
+.admin-simple-check-input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2c2f88;
+  cursor: pointer;
+}
+
+.admin-simple-check-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1f2937;
 }
 
 .admin-toast {
@@ -875,4 +994,227 @@
   .admin-stat-card p {
     font-size: 1.1rem;
   }
+}
+
+/* ═══════════════════════════════════════════════════════ */
+/* NUEVAS SECCIONES: Tabla de Proveedores Mejorada */
+/* ═══════════════════════════════════════════════════════ */
+
+/* Estilos para tabla de PDVs con Tailwind */
+.pdv-table-container {
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.pdv-table-header {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 1.5rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pdv-table-header p {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.035em;
+  color: #065f46;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.pdv-table-header h3 {
+  margin: 0.5rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.025em;
+}
+
+.pdv-table-header .subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+/* Filtros Mejorados */
+.pdv-filters-grid {
+  background: linear-gradient(180deg, #f0fdf4 0%, #f8fafc 100%);
+  padding: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pdv-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pdv-filter-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+.pdv-filter-group select,
+.pdv-filter-button {
+  border-radius: 0.875rem;
+  border: 1.5px solid #cbd5e1;
+  padding: 0.625rem 1rem;
+  font-size: 0.9rem;
+  background-color: #ffffff;
+  color: #1e293b;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.pdv-filter-group select:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.pdv-filter-group select:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.pdv-filter-button {
+  background-color: #f1f5f9;
+  color: #475569;
+  font-weight: 600;
+  cursor: pointer;
+  border-color: #cbd5e1;
+}
+
+.pdv-filter-button:hover {
+  background-color: #e2e8f0;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+/* Indicador de Página */
+.pdv-page-indicator {
+  padding: 1rem 1.5rem;
+  background: linear-gradient(90deg, #f0fdf4 0%, #f8fafc 100%);
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pdv-page-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.pdv-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.pdv-stat-badge.records {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.pdv-stat-badge.page {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.pdv-stat-badge.info {
+  font-size: 0.8rem;
+  color: #64748b;
+  background-color: transparent;
+  font-weight: 500;
+}
+
+/* Tabla Tailwind Personalizada */
+.pdv-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.pdv-table thead {
+  background-color: #f1f5f9;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pdv-table th {
+  padding: 1rem;
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #334155;
+  background-color: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.pdv-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.2s ease;
+}
+
+.pdv-table tbody tr:hover {
+  background-color: #f0fdf4;
+}
+
+.pdv-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.pdv-table td {
+  padding: 1rem;
+  vertical-align: middle;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.pdv-table td strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pdv-table .pdv-name {
+  font-weight: 600;
+  color: #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pdv-table .pdv-address {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+  display: block;
+}
+
+.pdv-table .pdv-provider {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.pdv-table .pdv-region {
+  color: #059669;
+  font-weight: 600;
 }

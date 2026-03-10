@@ -15,15 +15,63 @@ function normalizeText(value) {
     .trim()
 }
 
-function resolveDepartmentAlias(ldapDepartment, ldapDn = '') {
+const GENERIC_LDAP_OUS = new Set([
+  'oficina',
+  'usuario',
+  'usuarios',
+  'farmcorp',
+  'asistentes'
+])
+
+function extractOuCandidates(ldapDn = '') {
+  return String(ldapDn || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.toUpperCase().startsWith('OU='))
+    .map((part) => normalizeText(part.substring(3)))
+    .filter(Boolean)
+}
+
+function buildDepartmentCandidates(ldapDepartment, ldapDn = '') {
   const dep = normalizeText(ldapDepartment)
   const dn = normalizeText(ldapDn)
 
   if (dep === 'servidor' || dn.includes('ou=pdv')) {
-    return 'comercial'
+    return ['comercial']
   }
 
-  return dep
+  const candidates = []
+  const pushCandidate = (value) => {
+    const normalizedValue = normalizeText(value)
+    if (!normalizedValue || GENERIC_LDAP_OUS.has(normalizedValue) || candidates.includes(normalizedValue)) {
+      return
+    }
+    candidates.push(normalizedValue)
+  }
+
+  pushCandidate(dep)
+  extractOuCandidates(ldapDn).forEach(pushCandidate)
+
+  return candidates
+}
+
+function resolveDepartmentMatch(allDepartments, ldapDepartment, ldapDn = '') {
+  const candidates = buildDepartmentCandidates(ldapDepartment, ldapDn)
+
+  for (const candidate of candidates) {
+    const match = allDepartments.find((department) => normalizeText(department.descripcion) === candidate)
+    if (match) {
+      return {
+        match,
+        candidates,
+      }
+    }
+  }
+
+  return {
+    match: null,
+    candidates,
+  }
 }
 
 /**
@@ -199,12 +247,11 @@ router.get('/departamento/:username', async (req, res) => {
     // Buscar el ID del departamento en la BD basándose en el nombre del LDAP
     const [allDepts] = await pool.query('SELECT id_departamento, descripcion FROM departamentos')
 
-    const departamentoLDAP = resolveDepartmentAlias(ldapData.department, ldapData.dn)
-    const deptMatch = allDepts.find(d => normalizeText(d.descripcion) === departamentoLDAP)
+    const { match: deptMatch, candidates } = resolveDepartmentMatch(allDepts, ldapData.department, ldapData.dn)
 
     if (!deptMatch) {
       return res.status(404).json({ 
-        error: `Departamento "${ldapData.department}" no encontrado en el sistema. Contacta al administrador.` 
+        error: `No se pudo asociar el usuario a un departamento valido. LDAP detecto: ${candidates.join(', ') || ldapData.department}. Contacta al administrador.` 
       })
     }
 
@@ -366,14 +413,13 @@ router.post('/login', async (req, res) => {
         
         // Buscar el ID del departamento en la BD
         const [allDepts] = await conn.query('SELECT id_departamento, descripcion FROM departamentos')
-        const departamentoLDAP = resolveDepartmentAlias(ldapData.department, ldapData.dn)
-        const deptMatch = allDepts.find(d => normalizeText(d.descripcion) === departamentoLDAP)
+        const { match: deptMatch, candidates } = resolveDepartmentMatch(allDepts, ldapData.department, ldapData.dn)
 
         if (!deptMatch) {
           await conn.rollback()
           conn.release()
           return res.status(403).json({ 
-            error: `Tu departamento "${ldapData.department}" no está configurado en el sistema. Contacta al administrador.` 
+          error: `No se pudo asociar tu usuario a un departamento valido. LDAP detecto: ${candidates.join(', ') || ldapData.department}. Contacta al administrador.` 
           })
         }
 
