@@ -56,16 +56,35 @@ router.get('/pdvs', requireAuth, async (req, res) => {
  * Lista todos los tipos de suministro.
  */
 router.get('/tipo-suministros', requireAuth, async (req, res) => {
+  const { pdv } = req.query
+
   try {
+    const idPdv = pdv ? Number(pdv) : null
+    const idDepartamento = Number(req.session?.departamento || 0)
+
     const [rows] = await pool.query(`
       SELECT
-        MIN(ts.id_tipo_suministro) AS id_tipo_suministro,
+        ts.id_tipo_suministro,
         ts.descripcion
       FROM tipo_suministros ts
       INNER JOIN suministros s ON s.id_tipo_suministro = ts.id_tipo_suministro
-      GROUP BY ts.descripcion
+      WHERE (
+        (? IS NOT NULL AND EXISTS (
+          SELECT 1
+          FROM v_suministros_efectivos_pdv vsp
+          WHERE vsp.id_pdv = ?
+            AND vsp.id_suministro = s.id_suministro
+        ))
+        OR
+        (? IS NULL AND EXISTS (
+          SELECT 1
+          FROM departamento_suministros ds
+          WHERE ds.id_departamento = ?
+            AND ds.id_suministro = s.id_suministro
+        ))
+      )
       ORDER BY ts.descripcion
-    `);
+    `, [idPdv, idPdv, idPdv, idDepartamento]);
     return res.json(rows);
   } catch (err) {
     console.error(err);

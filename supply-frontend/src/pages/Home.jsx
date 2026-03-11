@@ -67,6 +67,25 @@ export default function Home() {
     new Map(tiposSuministro.map(t => [t.descripcion, t])).values()
   )
 
+  const cargarTiposSuministro = useCallback(async (signal) => {
+    try {
+      const params = {}
+      if (esComercial && pdvSeleccionado?.id_pdv) {
+        params.pdv = pdvSeleccionado.id_pdv
+      }
+
+      const response = await api.get('/catalogos/tipo-suministros', {
+        params,
+        signal,
+      })
+
+      setTipos(response.data || [])
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+      notify('No se pudo cargar categorias de suministros permitidas.', 'error')
+    }
+  }, [esComercial, pdvSeleccionado?.id_pdv, notify])
+
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
@@ -76,7 +95,7 @@ export default function Home() {
 
     const loadCatalogosBase = async () => {
       try {
-        const promises = [api.get('/catalogos/tipo-suministros', { signal: controller.signal })]
+        const promises = []
         if (esComercial) {
           promises.push(api.get('/catalogos/pdvs', { signal: controller.signal }))
         }
@@ -84,10 +103,8 @@ export default function Home() {
         const results = await Promise.all(promises)
         if (cancelled) return
 
-        setTipos(results[0].data || [])
-
-        if (esComercial && results[1]) {
-          const pdvData = results[1].data || []
+        if (esComercial && results[0]) {
+          const pdvData = results[0].data || []
           setPdvs(pdvData)
           if (user?.login) {
             const pdvDelUsuario = pdvData.find((p) =>
@@ -101,7 +118,7 @@ export default function Home() {
         }
       } catch (err) {
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
-        notify('No se pudo cargar el catalogo inicial.', 'error')
+        notify('No se pudo cargar la informacion inicial.', 'error')
       }
     }
 
@@ -112,6 +129,23 @@ export default function Home() {
       controller.abort()
     }
   }, [loading, user?.login, esComercial, notify])
+
+  useEffect(() => {
+    if (loading) return
+    if (esComercial && !pdvSeleccionado?.id_pdv) {
+      setTipos([])
+      setTipo('')
+      setSuministros([])
+      return
+    }
+
+    const controller = new AbortController()
+    cargarTiposSuministro(controller.signal)
+
+    return () => {
+      controller.abort()
+    }
+  }, [loading, esComercial, pdvSeleccionado?.id_pdv, cargarTiposSuministro])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {

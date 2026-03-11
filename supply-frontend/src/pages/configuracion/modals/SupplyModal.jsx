@@ -34,10 +34,31 @@ export default function SupplyModal({
             {providers.map((provider) => <option key={provider.id_proveedor} value={provider.id_proveedor}>{provider.nombre_proveedor}</option>)}
           </select>
           <input type="number" min="0" step="0.01" placeholder="Precio" value={form.precio_compra} onChange={(e) => onChange('precio_compra', e.target.value)} required />
-          <input type="number" min="0" placeholder="Stock" value={form.stock} onChange={(e) => onChange('stock', e.target.value)} required />
-          <select value={form.id_estado_suministro} onChange={(e) => onChange('id_estado_suministro', e.target.value)} required>
-            {states.map((state) => <option key={state.id_estado_suministro} value={state.id_estado_suministro}>{state.descripcion}</option>)}
-          </select>
+          <input
+            type="number"
+            min="0"
+            placeholder="Stock"
+            value={form.stock}
+            onChange={(e) => {
+              const newStock = e.target.value
+              onChange('stock', newStock)
+              onChange('id_estado_suministro', Number(newStock) <= 0 ? 2 : 1)
+            }}
+            required
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+            <span style={{ color: '#6b7280' }}>Estado:</span>
+            <span style={{
+              padding: '0.2rem 0.65rem',
+              borderRadius: '9999px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              background: Number(form.stock) <= 0 ? '#fee2e2' : '#dcfce7',
+              color: Number(form.stock) <= 0 ? '#dc2626' : '#16a34a',
+            }}>
+              {Number(form.stock) <= 0 ? 'No Disponible' : 'Disponible'}
+            </span>
+          </div>
           <div className="admin-modal-actions">
             <button type="button" className="admin-secondary icon-btn-with-text" onClick={onClose}><XIcon /> <span>Cancelar</span></button>
             <button type="submit" className="admin-primary icon-btn-with-text"><CheckIcon /> <span>Guardar</span></button>

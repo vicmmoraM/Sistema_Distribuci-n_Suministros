@@ -276,8 +276,8 @@ router.get('/supplies', async (req, res) => {
         s.id_tipo_suministro,
         ts.descripcion AS categoria,
         COALESCE(sps.stock, 0) AS stock,
-        COALESCE(sps.id_estado_suministro, s.id_estado_suministro) AS id_estado_suministro,
-        es.descripcion AS estado,
+        CASE WHEN COALESCE(sps.stock, 0) <= 0 THEN 2 ELSE 1 END AS id_estado_suministro,
+        CASE WHEN COALESCE(sps.stock, 0) <= 0 THEN 'No Disponible' ELSE 'Disponible' END AS estado,
         spv.id_suministro_precio,
         spv.id_proveedor,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
@@ -292,8 +292,6 @@ router.get('/supplies', async (req, res) => {
       LEFT JOIN suministro_proveedor_stock sps
         ON sps.id_suministro = s.id_suministro
        AND sps.id_proveedor = spv.id_proveedor
-      LEFT JOIN estado_suministros es
-        ON es.id_estado_suministro = COALESCE(sps.id_estado_suministro, s.id_estado_suministro)
       ${whereClause}
       ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, spv.id_suministro_precio ASC`,
       params
@@ -310,8 +308,7 @@ router.post('/supplies', async (req, res) => {
   const {
     descripcion,
     id_tipo_suministro,
-    stock = 0,
-    id_estado_suministro = 1,
+    stock = 100,
     id_proveedor,
     precio_compra,
   } = req.body
@@ -328,11 +325,14 @@ router.post('/supplies', async (req, res) => {
     return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
+  // Estado se deriva automáticamente del stock: 0 = No Disponible (2), >0 = Disponible (1)
+  const estadoAutomatic = Number(stock) <= 0 ? 2 : 1
+
   try {
     const [result] = await pool.query(
       `INSERT INTO suministros (descripcion, id_tipo_suministro, id_estado_suministro)
        VALUES (?, ?, ?)`,
-      [descripcion, id_tipo_suministro, id_estado_suministro]
+      [descripcion, id_tipo_suministro, estadoAutomatic]
     )
 
     if (id_proveedor && precio_compra !== undefined) {
@@ -349,7 +349,7 @@ router.post('/supplies', async (req, res) => {
          ON DUPLICATE KEY UPDATE
            stock = VALUES(stock),
            id_estado_suministro = VALUES(id_estado_suministro)`,
-        [result.insertId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro || 1)]
+        [result.insertId, Number(id_proveedor), Number(stock), estadoAutomatic]
       )
     }
 
@@ -366,13 +366,12 @@ router.put('/supplies/:id', async (req, res) => {
     descripcion,
     id_tipo_suministro,
     stock,
-    id_estado_suministro,
     id_suministro_precio,
     id_proveedor,
     precio_compra,
   } = req.body
 
-    if (!descripcion || !id_tipo_suministro || stock === undefined || !id_estado_suministro) {
+  if (!descripcion || !id_tipo_suministro || stock === undefined) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' })
   }
 
@@ -384,12 +383,15 @@ router.put('/supplies/:id', async (req, res) => {
     return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
+  // Estado se deriva automáticamente del stock: 0 = No Disponible (2), >0 = Disponible (1)
+  const estadoAutomatic = Number(stock) <= 0 ? 2 : 1
+
   try {
     await pool.query(
       `UPDATE suministros
-       SET descripcion = ?, id_tipo_suministro = ?
+       SET descripcion = ?, id_tipo_suministro = ?, id_estado_suministro = ?
        WHERE id_suministro = ?`,
-      [descripcion, id_tipo_suministro, supplyId]
+      [descripcion, id_tipo_suministro, estadoAutomatic, supplyId]
     )
 
     await pool.query('CALL sp_actualizar_precio(?, ?, ?, ?)', [
@@ -404,8 +406,8 @@ router.put('/supplies/:id', async (req, res) => {
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          stock = VALUES(stock),
-         id_estado_suministro = VALUES(id_estado_suministro)` ,
-      [supplyId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro)]
+         id_estado_suministro = VALUES(id_estado_suministro)`,
+      [supplyId, Number(id_proveedor), Number(stock), estadoAutomatic]
     )
 
     return res.json({ message: 'Suministro actualizado correctamente.' })

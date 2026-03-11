@@ -26,7 +26,7 @@ export const EMPTY_USER_FORM = {
 export const EMPTY_SUPPLY_FORM = {
   descripcion: '',
   id_tipo_suministro: '',
-  stock: 0,
+  stock: 100,
   id_estado_suministro: 1,
   id_suministro_precio: '',
   id_proveedor: '',
