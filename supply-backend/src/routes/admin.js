@@ -4,6 +4,7 @@ const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
 const bcrypt = require('bcrypt')
 const adminDepartamentosRoutes = require('./admin/departamentos')
+const adminSupplyAccessRoutes = require('./admin/supplyAccess')
 
 async function requireAdminAccess(req, res, next) {
   try {
@@ -32,6 +33,7 @@ async function requireAdminAccess(req, res, next) {
 
 router.use(requireAuth, requireAdminAccess)
 router.use(adminDepartamentosRoutes)
+router.use(adminSupplyAccessRoutes)
 
 router.get('/meta', async (req, res) => {
   try {
@@ -51,7 +53,7 @@ router.get('/meta', async (req, res) => {
       'SELECT id_proveedor, nombre_proveedor FROM proveedores ORDER BY nombre_proveedor ASC'
     )
     const [zonasComerciales] = await pool.query(
-      'SELECT id_zona_comercial, zona, codigo_zona FROM zonas_comerciales ORDER BY zona ASC'
+      'SELECT id_zona_comercial, id_ciudad, zona, codigo_zona FROM zonas_comerciales ORDER BY zona ASC'
     )
     const [ciudades] = await pool.query(
       'SELECT id_ciudad, id_region, descripcion FROM ciudades ORDER BY descripcion ASC'
@@ -274,7 +276,7 @@ router.get('/supplies', async (req, res) => {
         s.id_tipo_suministro,
         ts.descripcion AS categoria,
         COALESCE(sps.stock, 0) AS stock,
-        s.id_estado_suministro,
+        COALESCE(sps.id_estado_suministro, s.id_estado_suministro) AS id_estado_suministro,
         es.descripcion AS estado,
         spv.id_suministro_precio,
         spv.id_proveedor,
@@ -283,7 +285,6 @@ router.get('/supplies', async (req, res) => {
         DATE_FORMAT(s.fecha_actualizacion, '%Y-%m-%d %H:%i:%s') AS fecha_actualizacion
       FROM suministros s
       INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
-      INNER JOIN estado_suministros es ON es.id_estado_suministro = s.id_estado_suministro
       LEFT JOIN suministros_precios spv
         ON spv.id_suministro = s.id_suministro
        AND spv.fecha_vigencia_hasta IS NULL
@@ -291,6 +292,8 @@ router.get('/supplies', async (req, res) => {
       LEFT JOIN suministro_proveedor_stock sps
         ON sps.id_suministro = s.id_suministro
        AND sps.id_proveedor = spv.id_proveedor
+      LEFT JOIN estado_suministros es
+        ON es.id_estado_suministro = COALESCE(sps.id_estado_suministro, s.id_estado_suministro)
       ${whereClause}
       ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, spv.id_suministro_precio ASC`,
       params
@@ -341,11 +344,12 @@ router.post('/supplies', async (req, res) => {
       ])
 
       await pool.query(
-        `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock)
-         VALUES (?, ?, ?)
+        `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock, id_estado_suministro)
+         VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-           stock = VALUES(stock)`,
-        [result.insertId, Number(id_proveedor), Number(stock || 0)]
+           stock = VALUES(stock),
+           id_estado_suministro = VALUES(id_estado_suministro)`,
+        [result.insertId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro || 1)]
       )
     }
 
@@ -383,9 +387,9 @@ router.put('/supplies/:id', async (req, res) => {
   try {
     await pool.query(
       `UPDATE suministros
-       SET descripcion = ?, id_tipo_suministro = ?, id_estado_suministro = ?
+       SET descripcion = ?, id_tipo_suministro = ?
        WHERE id_suministro = ?`,
-      [descripcion, id_tipo_suministro, id_estado_suministro, supplyId]
+      [descripcion, id_tipo_suministro, supplyId]
     )
 
     await pool.query('CALL sp_actualizar_precio(?, ?, ?, ?)', [
@@ -396,11 +400,12 @@ router.put('/supplies/:id', async (req, res) => {
     ])
 
     await pool.query(
-      `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock)
-       VALUES (?, ?, ?)
+      `INSERT INTO suministro_proveedor_stock (id_suministro, id_proveedor, stock, id_estado_suministro)
+       VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         stock = VALUES(stock)`,
-      [supplyId, Number(id_proveedor), Number(stock || 0)]
+         stock = VALUES(stock),
+         id_estado_suministro = VALUES(id_estado_suministro)` ,
+      [supplyId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro)]
     )
 
     return res.json({ message: 'Suministro actualizado correctamente.' })
@@ -506,7 +511,7 @@ router.get('/pdvs', async (req, res) => {
     }
 
     if (region) {
-      conditions.push('c.id_region = ?')
+      conditions.push('cp.id_region = ?')
       params.push(Number(region))
     }
 
@@ -527,16 +532,16 @@ router.get('/pdvs', async (req, res) => {
         p.id_pdv,
         p.codigo_centro_costo AS descripcion,
         p.direccion,
-        p.id_ciudad,
         p.id_proveedor_principal,
         p.id_grupo_pdv,
         p.id_estado_pdv,
         p.id_zona_comercial,
         p.id_supervisor,
-        c.id_region,
+        p.id_ciudad,
+        cp.id_region,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
-        COALESCE(c.descripcion, 'Sin ciudad') AS ciudad,
-        COALESCE(r.descripcion, 'Sin región') AS region,
+        COALESCE(cp.descripcion, 'Sin ciudad') AS ciudad,
+        COALESCE(rp.descripcion, 'Sin región') AS region,
         zc.zona AS zona_comercial,
         ep.descripcion AS estado,
         gp.descripcion AS grupo,
@@ -545,8 +550,8 @@ router.get('/pdvs', async (req, res) => {
       FROM pdvs p
       LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
       INNER JOIN zonas_comerciales zc ON zc.id_zona_comercial = p.id_zona_comercial
-      LEFT JOIN ciudades c ON c.id_ciudad = p.id_ciudad
-      LEFT JOIN regiones r ON r.id_region = c.id_region
+      LEFT JOIN ciudades cp ON cp.id_ciudad = p.id_ciudad
+      LEFT JOIN regiones rp ON rp.id_region = cp.id_region
       LEFT JOIN supervisores sv ON sv.id_supervisor = p.id_supervisor
       INNER JOIN estado_pdvs ep ON ep.id_estado_pdv = p.id_estado_pdv
       INNER JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
@@ -566,6 +571,7 @@ router.post('/pdvs', async (req, res) => {
   const {
     descripcion,
     direccion,
+    id_ciudad,
     id_grupo_pdv,
     id_estado_pdv,
     id_zona_comercial,
@@ -578,11 +584,12 @@ router.post('/pdvs', async (req, res) => {
 
   try {
     const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
+    const ciudadValue = id_ciudad === null || id_ciudad === '' ? null : Number(id_ciudad)
 
     const [result] = await pool.query(
-      `INSERT INTO pdvs (codigo_centro_costo, direccion, id_grupo_pdv, id_estado_pdv, id_zona_comercial, id_proveedor_principal)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [descripcion, direccion || null, Number(id_grupo_pdv), Number(id_estado_pdv), Number(id_zona_comercial), proveedorValue]
+      `INSERT INTO pdvs (codigo_centro_costo, direccion, id_ciudad, id_grupo_pdv, id_estado_pdv, id_zona_comercial, id_proveedor_principal)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [descripcion, direccion || null, ciudadValue, Number(id_grupo_pdv), Number(id_estado_pdv), Number(id_zona_comercial), proveedorValue]
     )
 
     return res.status(201).json({ id_pdv: result.insertId, message: 'PDV creado correctamente.' })
@@ -594,7 +601,7 @@ router.post('/pdvs', async (req, res) => {
 
 router.put('/pdvs/:id', async (req, res) => {
   const pdvId = Number(req.params.id)
-  const { id_proveedor_principal, id_grupo_pdv, id_ciudad, direccion, id_zona_comercial, id_supervisor } = req.body
+  const { id_proveedor_principal, id_grupo_pdv, direccion, id_zona_comercial, id_supervisor, id_ciudad } = req.body
 
   if (!id_grupo_pdv) {
     return res.status(400).json({ error: 'El grupo del PDV es obligatorio.' })
@@ -602,13 +609,13 @@ router.put('/pdvs/:id', async (req, res) => {
 
   try {
     const proveedorValue = id_proveedor_principal === null || id_proveedor_principal === '' ? null : Number(id_proveedor_principal)
-    const ciudadValue = id_ciudad === null || id_ciudad === '' ? null : Number(id_ciudad)
     const zonaValue = id_zona_comercial === null || id_zona_comercial === '' ? null : Number(id_zona_comercial)
     const supervisorValue = id_supervisor === null || id_supervisor === '' ? null : Number(id_supervisor)
+    const ciudadValue = id_ciudad === null || id_ciudad === '' ? null : Number(id_ciudad)
 
     await pool.query(
-      'UPDATE pdvs SET id_proveedor_principal = ?, id_grupo_pdv = ?, id_ciudad = ?, direccion = ?, id_zona_comercial = ?, id_supervisor = ? WHERE id_pdv = ?',
-      [proveedorValue, Number(id_grupo_pdv), ciudadValue, direccion || null, zonaValue, supervisorValue, pdvId]
+      'UPDATE pdvs SET id_proveedor_principal = ?, id_grupo_pdv = ?, direccion = ?, id_zona_comercial = ?, id_supervisor = ?, id_ciudad = ? WHERE id_pdv = ?',
+      [proveedorValue, Number(id_grupo_pdv), direccion || null, zonaValue, supervisorValue, ciudadValue, pdvId]
     )
 
     return res.json({ message: 'PDV actualizado correctamente.' })
