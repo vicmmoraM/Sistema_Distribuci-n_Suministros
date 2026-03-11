@@ -54,12 +54,15 @@ export default function DepartmentsSection({
   return (
     <>
       <div className="admin-filters">
-        <input
-          type="text"
-          placeholder="Buscar departamento..."
-          value={departmentFilters.search}
-          onChange={(event) => onDepartmentFilterChange('search', event.target.value)}
-        />
+        <div className="admin-filter-group">
+          <label>Buscar departamento</label>
+          <input
+            type="text"
+            placeholder="Nombre..."
+            value={departmentFilters.search}
+            onChange={(event) => onDepartmentFilterChange('search', event.target.value)}
+          />
+        </div>
       </div>
 
       <div className="admin-table-wrap">
