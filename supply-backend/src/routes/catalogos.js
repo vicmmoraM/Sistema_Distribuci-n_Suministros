@@ -103,6 +103,9 @@ router.get('/suministros', requireAuth, async (req, res) => {
   }
 
   try {
+    const idPdv = pdv ? Number(pdv) : null
+    const idDepartamento = Number(req.session?.departamento || 0)
+
     const [rows] = await pool.query(
       `SELECT
         cv.id_suministro,
@@ -111,14 +114,26 @@ router.get('/suministros', requireAuth, async (req, res) => {
         cv.nombre_proveedor AS proveedor
       FROM v_catalogo_disponible cv
       LEFT JOIN pdvs p ON p.id_pdv = ?
-      WHERE cv.id_suministro IN (
-        SELECT s.id_suministro
-        FROM suministros s
-        WHERE s.id_tipo_suministro = ?
-      )
+      INNER JOIN suministros s ON s.id_suministro = cv.id_suministro
+      WHERE s.id_tipo_suministro = ?
+        AND (
+          (? IS NOT NULL AND EXISTS (
+            SELECT 1
+            FROM v_suministros_efectivos_pdv vsp
+            WHERE vsp.id_pdv = ?
+              AND vsp.id_suministro = cv.id_suministro
+          ))
+          OR
+          (? IS NULL AND EXISTS (
+            SELECT 1
+            FROM departamento_suministros ds
+            WHERE ds.id_departamento = ?
+              AND ds.id_suministro = cv.id_suministro
+          ))
+        )
         AND (p.id_proveedor_principal IS NULL OR cv.id_proveedor = p.id_proveedor_principal)
       ORDER BY cv.suministro`,
-      [pdv || null, tipo]
+      [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento]
     );
     return res.json(rows);
   } catch (err) {

@@ -202,6 +202,31 @@ router.post('/', requireAuth, async (req, res) => {
       // Verificar que el suministro existe y está disponible
       // Prioridad: 1) Proveedor principal del PDV (Comercial), 2) Proveedor del departamento (mes actual), 3) Más barato
       const proveedorPreferido = esComercial && pdv ? pdv.id_proveedor_principal : proveedorDepartamento
+
+      const [accessRows] = await conn.query(
+        esComercial
+          ? `SELECT 1
+             FROM v_suministros_efectivos_pdv vsp
+             WHERE vsp.id_pdv = ?
+               AND vsp.id_suministro = ?
+             LIMIT 1`
+          : `SELECT 1
+             FROM departamento_suministros ds
+             WHERE ds.id_departamento = ?
+               AND ds.id_suministro = ?
+             LIMIT 1`,
+        esComercial
+          ? [pdv.id_pdv, Number(item.suministroId)]
+          : [Number(req.session.departamento), Number(item.suministroId)]
+      )
+
+      if (accessRows.length === 0) {
+        await conn.rollback()
+        conn.release()
+        return res.status(403).json({
+          error: `No tienes permiso para solicitar el suministro ID ${item.suministroId} en este contexto.`,
+        })
+      }
       
       const [sumRows] = await conn.query(
         `SELECT 

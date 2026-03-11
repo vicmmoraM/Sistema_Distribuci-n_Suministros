@@ -75,8 +75,8 @@ class PedidoRepository {
        FROM pdvs p
        INNER JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
        INNER JOIN zonas_comerciales z ON z.id_zona_comercial = p.id_zona_comercial
-       INNER JOIN ciudades c ON c.id_ciudad = z.id_ciudad
-       INNER JOIN regiones r ON r.id_region = c.id_region
+      LEFT JOIN ciudades c ON c.id_ciudad = p.id_ciudad
+      LEFT JOIN regiones r ON r.id_region = c.id_region
        WHERE p.id_pdv = ? AND p.id_estado_pdv = 1
        LIMIT 1`,
       [idPdv]
