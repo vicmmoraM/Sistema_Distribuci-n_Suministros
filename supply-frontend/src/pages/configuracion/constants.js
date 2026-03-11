@@ -8,6 +8,7 @@ export const NAV_ITEMS = [
 export const SUPPLIES_TABS = [
   { key: 'supplies-list', label: 'Suministros' },
   { key: 'pdv-providers', label: 'PDVs - Proveedores' },
+  { key: 'supply-access', label: 'Permisos de Suministros' },
   { key: 'categories', label: 'Categorias' },
   { key: 'departamentos', label: 'Departamentos' },
 ];

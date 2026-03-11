@@ -202,6 +202,27 @@ export default function Configuracion() {
     if (!loading) loadDepartments()
   }, [departmentFilters.search])
 
+  // Controlar el scroll del body cuando hay modales abiertos
+  useEffect(() => {
+    const isAnyModalOpen =
+      userModalOpen ||
+      supplyModalOpen ||
+      pdvModalOpen ||
+      categoryModalOpen ||
+      departmentModalOpen ||
+      confirmDialog.isOpen
+
+    if (isAnyModalOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'auto'
+    }
+
+    return () => {
+      document.body.style.overflow = 'auto'
+    }
+  }, [userModalOpen, supplyModalOpen, pdvModalOpen, categoryModalOpen, departmentModalOpen, confirmDialog.isOpen])
+
   const lowStockCount = useMemo(() => supplies.filter(s => Number(s.stock) <= 10).length, [supplies])
 
   const openCreateUser = () => {
@@ -631,6 +652,7 @@ export default function Configuracion() {
                     onDepartmentFilterChange={handleDepartmentFilterChange}
                     onEditDepartment={openEditDepartment}
                     onDeleteDepartment={deleteDepartment}
+                    onNotify={showToast}
                     EditIcon={EditIcon}
                     TrashIcon={TrashIcon}
                     PlusIcon={PlusIcon}

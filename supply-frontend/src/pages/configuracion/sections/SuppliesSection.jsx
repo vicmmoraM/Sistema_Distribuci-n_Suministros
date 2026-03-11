@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '../../../api/axios'
 import DepartmentsSection from './DepartmentsSection'
+import SupplyAccessSection from './SupplyAccessSection'
 
 const SUPPLIES_PAGE_SIZE = 10
 const DEFAULT_PDV_PAGE_SIZE = 20
@@ -45,6 +46,7 @@ export default function SuppliesSection({
   onDepartmentFilterChange,
   onEditDepartment,
   onDeleteDepartment,
+  onNotify,
   EditIcon,
   TrashIcon,
   PlusIcon,
@@ -96,6 +98,33 @@ export default function SuppliesSection({
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Error descargando Excel:', err)
+    }
+  }
+
+  const handleDownloadSuppliesExcel = async () => {
+    try {
+      const response = await api.get('/gestion/supplies/export/excel', {
+        responseType: 'blob',
+        params: {
+          search: supplyFilters.search || '',
+          category: supplyFilters.category || '',
+          provider: supplyFilters.provider || '',
+        }
+      })
+
+      const blob = new Blob([
+        response.data
+      ], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `Suministros_${new Date().toISOString().split('T')[0]}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Error descargando Excel de suministros:', err)
     }
   }
 
@@ -157,12 +186,36 @@ export default function SuppliesSection({
     ))
   }
 
+  const TAB_DESCRIPTIONS = {
+    'supplies-list': 'Catálogo completo de suministros disponibles',
+    'pdv-providers': 'Gestión de puntos de venta y sus proveedores asignados',
+    'supply-access': 'Configura qué suministros puede solicitar cada PDV o departamento',
+    'categories': 'Administra las categorías y tipos de suministros',
+    'departamentos': 'Gestión de departamentos de la organización',
+  }
+
   return (
     <div className="admin-panel-card">
       <div className="admin-panel-header">
-        <h2>Gestion de Suministros</h2>
+        <div>
+          <h2>Gestion de Suministros</h2>
+          {TAB_DESCRIPTIONS[suppliesActiveTab] && (
+            <p className="admin-panel-subtitle">{TAB_DESCRIPTIONS[suppliesActiveTab]}</p>
+          )}
+        </div>
         {suppliesActiveTab === 'supplies-list' && (
-          <button type="button" className="admin-primary icon-btn-with-text" onClick={onCreateSupply} title="Nuevo Suministro"><PlusIcon /> <span>Nuevo Suministro</span></button>
+          <div className="admin-panel-actions">
+            <button type="button" className="admin-primary icon-btn-with-text" onClick={onCreateSupply} title="Nuevo Suministro"><PlusIcon /> <span>Nuevo Suministro</span></button>
+            <button
+              type="button"
+              className="admin-excel-btn icon-btn-with-text"
+              onClick={handleDownloadSuppliesExcel}
+              title="Descargar Excel"
+            >
+              <ExcelIcon />
+              <span>Descargar Excel</span>
+            </button>
+          </div>
         )}
         {suppliesActiveTab === 'pdv-providers' && (
           <div className="admin-panel-actions">
@@ -202,35 +255,50 @@ export default function SuppliesSection({
       {suppliesActiveTab === 'supplies-list' && (
         <>
           <div className="admin-filters admin-filters-supplies">
-            <input
-              type="text"
-              placeholder="Buscar suministro..."
-              value={supplyFilters.search}
-              onChange={(event) => onSupplyFilterChange('search', event.target.value)}
-            />
-            <select
-              value={supplyFilters.category}
-              onChange={(event) => onSupplyFilterChange('category', event.target.value)}
-            >
-              <option value="">Todas las categorias</option>
-              {categoriesMeta.map((category) => (
-                <option key={category.id_tipo_suministro} value={category.id_tipo_suministro}>
-                  {category.descripcion}
-                </option>
-              ))}
-            </select>
-            <select
-              value={supplyFilters.provider}
-              onChange={(event) => onSupplyFilterChange('provider', event.target.value)}
-            >
-              <option value="">Todos los proveedores</option>
-              {providersMeta.map((provider) => (
-                <option key={provider.id_proveedor} value={provider.id_proveedor}>
-                  {provider.nombre_proveedor}
-                </option>
-              ))}
-            </select>
-            <div className="stock-pill">Stock bajo: {lowStockCount}</div>
+            <div className="admin-filter-group">
+              <label>Buscar suministro</label>
+              <input
+                type="text"
+                placeholder="Nombre..."
+                value={supplyFilters.search}
+                onChange={(event) => onSupplyFilterChange('search', event.target.value)}
+              />
+            </div>
+            <div className="admin-filter-group">
+              <label>Categoría</label>
+              <select
+                value={supplyFilters.category}
+                onChange={(event) => onSupplyFilterChange('category', event.target.value)}
+              >
+                <option value="">Todas las categorias</option>
+                {categoriesMeta.map((category) => (
+                  <option key={category.id_tipo_suministro} value={category.id_tipo_suministro}>
+                    {category.descripcion}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="admin-filter-group">
+              <label>Proveedor</label>
+              <select
+                value={supplyFilters.provider}
+                onChange={(event) => onSupplyFilterChange('provider', event.target.value)}
+              >
+                <option value="">Todos los proveedores</option>
+                {providersMeta.map((provider) => (
+                  <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                    {provider.nombre_proveedor}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="admin-filter-group">
+              <label>Stock bajo</label>
+              <div className="stock-pill">
+                <span>Bajo stock:</span>
+                <span className="stock-pill-count">{lowStockCount}</span>
+              </div>
+            </div>
           </div>
 
           <div className="admin-table-wrap">
@@ -303,45 +371,57 @@ export default function SuppliesSection({
       {suppliesActiveTab === 'pdv-providers' && (
         <>
           <div className="admin-filters admin-filters-pdvs">
-            <input
-              type="text"
-              placeholder="Buscar PDV..."
-              value={pdvFilters.search}
-              onChange={(event) => onPdvFilterChange('search', event.target.value)}
-            />
-            <select
-              value={pdvFilters.region}
-              onChange={(event) => onPdvFilterChange('region', event.target.value)}
-            >
-              <option value="">Todas las regiones</option>
-              {(regionsMeta || []).map((region) => (
-                <option key={region.id_region} value={region.id_region}>
-                  {region.descripcion}
-                </option>
-              ))}
-            </select>
-            <select
-              value={pdvFilters.zone}
-              onChange={(event) => onPdvFilterChange('zone', event.target.value)}
-            >
-              <option value="">Todas las zonas</option>
-              {zonesMeta.map((zone) => (
-                <option key={zone.id_zona_comercial} value={zone.id_zona_comercial}>
-                  {zone.zona}
-                </option>
-              ))}
-            </select>
-            <select
-              value={pdvFilters.provider}
-              onChange={(event) => onPdvFilterChange('provider', event.target.value)}
-            >
-              <option value="">Todos los proveedores</option>
-              {providersMeta.map((provider) => (
-                <option key={provider.id_proveedor} value={provider.id_proveedor}>
-                  {provider.nombre_proveedor}
-                </option>
-              ))}
-            </select>
+            <div className="admin-filter-group">
+              <label>Buscar PDV</label>
+              <input
+                type="text"
+                placeholder="Nombre o código..."
+                value={pdvFilters.search}
+                onChange={(event) => onPdvFilterChange('search', event.target.value)}
+              />
+            </div>
+            <div className="admin-filter-group">
+              <label>Región</label>
+              <select
+                value={pdvFilters.region}
+                onChange={(event) => onPdvFilterChange('region', event.target.value)}
+              >
+                <option value="">Todas las regiones</option>
+                {(regionsMeta || []).map((region) => (
+                  <option key={region.id_region} value={region.id_region}>
+                    {region.descripcion}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="admin-filter-group">
+              <label>Zona</label>
+              <select
+                value={pdvFilters.zone}
+                onChange={(event) => onPdvFilterChange('zone', event.target.value)}
+              >
+                <option value="">Todas las zonas</option>
+                {zonesMeta.map((zone) => (
+                  <option key={zone.id_zona_comercial} value={zone.id_zona_comercial}>
+                    {zone.zona}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="admin-filter-group">
+              <label>Proveedor</label>
+              <select
+                value={pdvFilters.provider}
+                onChange={(event) => onPdvFilterChange('provider', event.target.value)}
+              >
+                <option value="">Todos los proveedores</option>
+                {providersMeta.map((provider) => (
+                  <option key={provider.id_proveedor} value={provider.id_proveedor}>
+                    {provider.nombre_proveedor}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="admin-table-wrap">
@@ -415,12 +495,15 @@ export default function SuppliesSection({
       {suppliesActiveTab === 'categories' && (
         <>
           <div className="admin-filters">
-            <input
-              type="text"
-              placeholder="Buscar categoria..."
-              value={categoryFilters.search}
-              onChange={(event) => onCategoryFilterChange('search', event.target.value)}
-            />
+            <div className="admin-filter-group">
+              <label>Buscar categoría</label>
+              <input
+                type="text"
+                placeholder="Nombre..."
+                value={categoryFilters.search}
+                onChange={(event) => onCategoryFilterChange('search', event.target.value)}
+              />
+            </div>
           </div>
 
           <div className="admin-table-wrap">
@@ -447,6 +530,10 @@ export default function SuppliesSection({
             </table>
           </div>
         </>
+      )}
+
+      {suppliesActiveTab === 'supply-access' && (
+        <SupplyAccessSection onNotify={onNotify} />
       )}
 
       {suppliesActiveTab === 'departamentos' && (
