@@ -13,8 +13,14 @@ export default function SupplyModal({
 }) {
   if (!isOpen) return null
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
   return (
-    <div className="admin-modal-overlay">
+    <div className="admin-modal-overlay" onClick={handleBackdropClick}>
       <div className="admin-modal">
         <h3>{mode === 'create' ? 'Crear Suministro' : 'Editar Suministro'}</h3>
         <form onSubmit={onSubmit} className="admin-form-grid">

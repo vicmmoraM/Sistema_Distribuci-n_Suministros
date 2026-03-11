@@ -17,6 +17,12 @@ export default function PdvModal({
 }) {
   if (!isOpen) return null
 
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
   // Helper function to get region name from id
   const getRegionName = (regionId) => {
     if (!regionId) return 'No especificada'
@@ -24,29 +30,14 @@ export default function PdvModal({
     return region ? region.descripcion : 'No especificada'
   }
 
-  // Helper function to get region id from city id
   const getRegionIdFromCity = (cityId) => {
     if (!cityId) return ''
-    const city = (cities || []).find(c => c.id_ciudad === Number(cityId))
-    return city ? city.id_region : ''
-  }
-
-  // Helper function to get city name from id
-  const getCityName = (cityId) => {
-    if (!cityId) return 'No especificada'
-    const city = (cities || []).find(c => c.id_ciudad === Number(cityId))
-    return city ? city.descripcion : 'No especificada'
-  }
-
-  // Helper function to get supervisor name from id
-  const getSupervisorName = (supervisorId) => {
-    if (!supervisorId) return 'Sin asignar'
-    const supervisor = (supervisores || []).find(s => s.id_supervisor === Number(supervisorId))
-    return supervisor ? supervisor.nombres : 'Sin asignar'
+    const city = (cities || []).find((item) => Number(item.id_ciudad) === Number(cityId))
+    return city ? String(city.id_region || '') : ''
   }
 
   return (
-    <div className="admin-modal-overlay">
+    <div className="admin-modal-overlay" onClick={handleBackdropClick}>
       <div className="admin-modal admin-modal-pdv">
         <div className="admin-modal-header">
           <h3>{mode === 'create' ? 'Crear Nuevo PDV' : 'Editar PDV'}</h3>
@@ -83,7 +74,9 @@ export default function PdvModal({
                 <label className="admin-modal-label">Zona Comercial</label>
                 <select
                   value={String(form.id_zona_comercial || '')}
-                  onChange={(e) => onChange('id_zona_comercial', e.target.value)}
+                  onChange={(e) => {
+                    onChange('id_zona_comercial', e.target.value)
+                  }}
                   className="admin-modal-select"
                   required
                 >
@@ -91,6 +84,27 @@ export default function PdvModal({
                   {zones.map((zone) => (
                     <option key={zone.id_zona_comercial} value={String(zone.id_zona_comercial)}>
                       {zone.zona}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="admin-modal-field admin-modal-field-half">
+                <label className="admin-modal-label">Ciudad</label>
+                <select
+                  value={String(form.id_ciudad || '')}
+                  onChange={(e) => {
+                    const selectedCityId = e.target.value
+                    onChange('id_ciudad', selectedCityId)
+                    onChange('id_region', getRegionIdFromCity(selectedCityId))
+                  }}
+                  className="admin-modal-select"
+                  required
+                >
+                  <option value="">Selecciona una ciudad</option>
+                  {(cities || []).map((city) => (
+                    <option key={city.id_ciudad} value={String(city.id_ciudad)}>
+                      {city.descripcion}
                     </option>
                   ))}
                 </select>
@@ -132,7 +146,9 @@ export default function PdvModal({
                 <label className="admin-modal-label">Zona Comercial</label>
                 <select
                   value={String(form.id_zona_comercial || '')}
-                  onChange={(e) => onChange('id_zona_comercial', e.target.value)}
+                  onChange={(e) => {
+                    onChange('id_zona_comercial', e.target.value)
+                  }}
                   className="admin-modal-select"
                 >
                   <option value="">Selecciona una zona</option>
@@ -151,9 +167,7 @@ export default function PdvModal({
                   onChange={(e) => {
                     const selectedCityId = e.target.value
                     onChange('id_ciudad', selectedCityId)
-                    // Update region automatically based on selected city
-                    const regionId = getRegionIdFromCity(selectedCityId)
-                    onChange('id_region', regionId)
+                    onChange('id_region', getRegionIdFromCity(selectedCityId))
                   }}
                   className="admin-modal-select"
                 >
@@ -170,7 +184,7 @@ export default function PdvModal({
                 <label className="admin-modal-label">Region</label>
                 <input
                   type="text"
-                  value={getRegionName(form.id_region)}
+                  value={getRegionName(getRegionIdFromCity(form.id_ciudad) || form.id_region)}
                   disabled
                   className="admin-modal-select"
                 />
