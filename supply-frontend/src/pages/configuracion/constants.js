@@ -11,6 +11,7 @@ export const SUPPLIES_TABS = [
   { key: 'supply-access', label: 'Permisos de Suministros' },
   { key: 'categories', label: 'Categorias' },
   { key: 'departamentos', label: 'Departamentos' },
+  { key: 'gestion-configuracion', label: 'Gestión de Fechas y PDVs' },
 ];
 
 export const EMPTY_USER_FORM = {
@@ -48,5 +49,5 @@ export const EMPTY_PDV_FORM = {
 export const EMPTY_DEPARTMENT_FORM = {
   descripcion: '',
   id_proveedor: '',
-  presupuesto_autorizado: '',
+  presupuestos: {},
 };

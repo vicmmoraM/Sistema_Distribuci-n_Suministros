@@ -6,6 +6,7 @@ export default function DepartmentsSection({
   departmentFilters,
   onDepartmentFilterChange,
   departments,
+  gruposPresupuesto,
   onEditDepartment,
   onDeleteDepartment,
   EditIcon,
@@ -71,26 +72,39 @@ export default function DepartmentsSection({
             <tr>
               <th>Departamento</th>
               <th>Proveedor</th>
-              <th>Presupuesto Autorizado</th>
-              <th>Presupuesto Ejecutado</th>
+              {(gruposPresupuesto || []).map((grupo) => (
+                <th key={grupo.id_grupo_presupuesto}>{grupo.descripcion}</th>
+              ))}
               <th>Usuarios</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {paginatedDepartments.map((item) => (
-              <tr key={item.id_departamento}>
-                <td data-label="Departamento">{item.descripcion}</td>
-                <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
-                <td data-label="Presupuesto Autorizado">${Number(item.presupuesto_autorizado || 0).toFixed(2)}</td>
-                <td data-label="Presupuesto Ejecutado">${Number(item.presupuesto_ejecutado || 0).toFixed(2)}</td>
-                <td data-label="Usuarios">{item.total_usuarios}</td>
-                <td data-label="Acciones" className="actions-cell">
-                  <button type="button" className="icon-btn" onClick={() => onEditDepartment(item)} title="Editar"><EditIcon /></button>
-                  <button type="button" className="danger icon-btn" onClick={() => onDeleteDepartment(item)} title="Eliminar"><TrashIcon /></button>
-                </td>
-              </tr>
-            ))}
+            {paginatedDepartments.map((item) => {
+              const getPresupuesto = (grupoId) =>
+                item.presupuestos?.find((p) => p.id_grupo_presupuesto === grupoId)
+              return (
+                <tr key={item.id_departamento}>
+                  <td data-label="Departamento">{item.descripcion}</td>
+                  <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
+                  {(gruposPresupuesto || []).map((grupo) => {
+                    const p = getPresupuesto(grupo.id_grupo_presupuesto)
+                    return (
+                      <td key={grupo.id_grupo_presupuesto} data-label={grupo.descripcion}>
+                        {p
+                          ? `$${Number(p.monto_autorizado).toFixed(2)} / $${Number(p.monto_ejecutado).toFixed(2)}`
+                          : '—'}
+                      </td>
+                    )
+                  })}
+                  <td data-label="Usuarios">{item.total_usuarios}</td>
+                  <td data-label="Acciones" className="actions-cell">
+                    <button type="button" className="icon-btn" onClick={() => onEditDepartment(item)} title="Editar"><EditIcon /></button>
+                    <button type="button" className="danger icon-btn" onClick={() => onDeleteDepartment(item)} title="Eliminar"><TrashIcon /></button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

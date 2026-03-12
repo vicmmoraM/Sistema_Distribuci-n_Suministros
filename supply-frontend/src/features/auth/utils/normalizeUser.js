@@ -18,6 +18,7 @@ export function normalizeUser(input) {
     departamento: toNumber(input.departamento ?? input.department, 0),
     departmentName: input.departmentName ?? null,
     departmentBudget: toNumber(input.departmentBudget, 0),
+    departmentBudgets: Array.isArray(input.departmentBudgets) ? input.departmentBudgets : [],
     roleId: input.roleId ?? null,
     roleName: input.roleName ?? null,
     permissions: {

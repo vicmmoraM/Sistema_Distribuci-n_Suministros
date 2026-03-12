@@ -59,6 +59,7 @@ export default function Configuracion() {
     estadosPdvs: [],
     supervisores: [],
     regiones: [],
+    gruposPresupuesto: [],
   })
 
   const [users, setUsers] = useState([])
@@ -332,6 +333,13 @@ export default function Configuracion() {
     setDepartmentForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleDepartmentBudgetChange = (grupoId, value) => {
+    setDepartmentForm((prev) => ({
+      ...prev,
+      presupuestos: { ...prev.presupuestos, [grupoId]: value },
+    }))
+  }
+
   const openCreateSupply = () => {
     setSupplyModalMode('create')
     setEditingSupplyId(null)
@@ -528,10 +536,16 @@ export default function Configuracion() {
   const openEditDepartment = (department) => {
     setDepartmentModalMode('edit')
     setEditingDepartmentId(department.id_departamento)
+    const presupuestosObj = {}
+    if (Array.isArray(department.presupuestos)) {
+      department.presupuestos.forEach((p) => {
+        presupuestosObj[p.id_grupo_presupuesto] = String(p.monto_autorizado ?? '')
+      })
+    }
     setDepartmentForm({
       descripcion: department.descripcion,
       id_proveedor: String(department.id_proveedor || ''),
-      presupuesto_autorizado: String(department.presupuesto_autorizado || ''),
+      presupuestos: presupuestosObj,
     })
     setDepartmentModalOpen(true)
   }
@@ -539,10 +553,14 @@ export default function Configuracion() {
   const submitDepartment = async (event) => {
     event.preventDefault()
     try {
+      const presupuestosArray = Object.entries(departmentForm.presupuestos || {})
+        .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+        .map(([id, monto]) => ({ id_grupo_presupuesto: Number(id), monto_autorizado: Number(monto) }))
+
       const payload = {
         descripcion: departmentForm.descripcion,
         id_proveedor: departmentForm.id_proveedor || null,
-        presupuesto_autorizado: departmentForm.presupuesto_autorizado ? Number(departmentForm.presupuesto_autorizado) : null,
+        presupuestos: presupuestosArray,
       }
 
       if (departmentModalMode === 'create') {
@@ -640,6 +658,8 @@ export default function Configuracion() {
                     onPdvFilterChange={handlePdvFilterChange}
                     regionsMeta={meta.regiones || []}
                     zonesMeta={meta.zonasComerciales}
+                    statesMeta={meta.estadosPdvs || []}
+                    supervisoresMeta={meta.supervisores || []}
                     pdvs={pdvs}
                     onEditPdv={openEditPdv}
                     categories={categories}
@@ -652,6 +672,7 @@ export default function Configuracion() {
                     onDepartmentFilterChange={handleDepartmentFilterChange}
                     onEditDepartment={openEditDepartment}
                     onDeleteDepartment={deleteDepartment}
+                    gruposPresupuesto={meta.gruposPresupuesto || []}
                     onNotify={showToast}
                     EditIcon={EditIcon}
                     TrashIcon={TrashIcon}
@@ -733,9 +754,11 @@ export default function Configuracion() {
         mode={departmentModalMode}
         form={departmentForm}
         providers={meta.proveedores}
+        gruposPresupuesto={meta.gruposPresupuesto || []}
         onClose={() => setDepartmentModalOpen(false)}
         onSubmit={submitDepartment}
         onChange={handleDepartmentFormChange}
+        onBudgetChange={handleDepartmentBudgetChange}
         XIcon={XIcon}
         CheckIcon={CheckIcon}
       />
