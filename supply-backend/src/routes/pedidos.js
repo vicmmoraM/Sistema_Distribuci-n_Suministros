@@ -90,6 +90,15 @@ router.post('/', requireAuth, async (req, res) => {
     )
     const hasDetalleProveedorColumn = Number(detalleProveedorColumnInfo?.total || 0) > 0
 
+    const [[departmentWindowColumnsInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'departamentos'
+         AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')`
+    )
+    const hasDepartmentWindowColumns = Number(departmentWindowColumnsInfo?.total || 0) === 2
+
     // ── 2. Contexto del usuario (departamento y presupuesto) ───────────────
     const [deptRows] = await conn.query(
       `SELECT
@@ -164,7 +173,38 @@ router.post('/', requireAuth, async (req, res) => {
         })
       }
     } else if (hasDepartamentoProveedorRotacion) {
-      // Para departamentos NO comerciales, calcular proveedor según rotación automática
+      // Para departamentos NO comerciales, primero validar su ventana de pedidos configurada.
+      const hoy = new Date()
+      const diaDelMes = hoy.getDate()
+
+      let departmentWindowStart = 1
+      let departmentWindowEnd = 3
+
+      if (hasDepartmentWindowColumns) {
+      const [departmentWindowRows] = await conn.query(
+        `SELECT COALESCE(dias_inicio_ventana, 1) AS dia_inicio,
+                COALESCE(dias_fin_ventana, 3) AS dia_fin
+         FROM departamentos
+         WHERE id_departamento = ?
+         LIMIT 1`,
+        [req.session.departamento]
+      )
+
+      if (departmentWindowRows.length > 0) {
+        departmentWindowStart = Number(departmentWindowRows[0].dia_inicio || 1)
+        departmentWindowEnd = Number(departmentWindowRows[0].dia_fin || 3)
+      }
+      }
+
+      if (diaDelMes < departmentWindowStart || diaDelMes > departmentWindowEnd) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+      error: `Los departamentos solo pueden hacer pedidos del ${departmentWindowStart} al ${departmentWindowEnd} de cada mes.`,
+        })
+      }
+
+      // Luego calcular proveedor según rotación automática
       const mesActual = new Date().getMonth() + 1
       
       const [provRows] = await conn.query(

@@ -239,20 +239,21 @@ export default function Home() {
     })
     : suministros
 
-  // Totales
-  const subtotalOficina = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
-  const subtotalLimpieza = carrito.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
+  // Totales por grupo de presupuesto
+  const subtotalOficina = carrito.filter(i => i.grupoPresupuestoId === 1).reduce((s, i) => s + i.total, 0)
+  const subtotalLimpieza = carrito.filter(i => i.grupoPresupuestoId === 2).reduce((s, i) => s + i.total, 0)
   const totalPedido = carrito.reduce((s, i) => s + i.total, 0)
   const limiteDisponible = esComercial
     ? Number(pdvSeleccionado?.cupo || 0)
     : Number(user?.departmentBudget || 0)
   const cupoExcedido = totalPedido > limiteDisponible
+  const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
     const sum = suministros.find(s => s.id_suministro === Number(suministroId))
     const tipo = tiposSuministro.find(t => t.id_tipo_suministro === Number(tipoSeleccionado))
-    if (!sum) return
+    if (!sum || !tipo) return
 
     setCarrito(prev => [...prev, {
       id: createId('cart-item'),
@@ -260,6 +261,7 @@ export default function Home() {
       suministroNombre: sum.descripcion,
       tipoId: tipo.id_tipo_suministro,
       tipoNombre: tipo.descripcion,
+      grupoPresupuestoId: tipo.id_grupo_presupuesto,
       cantidad: Number(cantidad),
       precioUnitario: Number(sum.precio),
       total: Number(cantidad) * Number(sum.precio),
@@ -281,6 +283,7 @@ export default function Home() {
   const handlePedido = async () => {
     if (carrito.length === 0) return
     if (esComercial && !pdvSeleccionado) return
+
     if (cupoExcedido) {
       setError(esComercial
         ? 'El total supera el cupo asignado al PDV.'
@@ -442,13 +445,28 @@ export default function Home() {
                   </div>
                 )}
 
-                {!esComercial && (
-                  <div className="pdv-info-tags">
-                    <span className="pdv-tag cupo">
-                      Presupuesto: ${Number(user?.departmentBudget || 0).toFixed(2)}
-                    </span>
-                  </div>
-                )}
+                {!esComercial && (() => {
+                  // Mostrar presupuesto solo cuando el usuario ya eligio una categoria.
+                  if (!tipoSeleccionado) return null
+
+                  const tipoObj = tiposSuministro.find(t => String(t.id_tipo_suministro) === String(tipoSeleccionado))
+                  const grupoId = tipoObj?.id_grupo_presupuesto
+                  const budgets = user?.departmentBudgets || []
+                  const grupoActivo = grupoId ? budgets.find(b => b.id_grupo_presupuesto === grupoId) : null
+
+                  if (!grupoActivo) return null
+
+                  return (
+                    <div className="pdv-info-tags">
+                      <span className="pdv-tag cupo">
+                        {grupoActivo.descripcion}: ${Number(grupoActivo.monto_autorizado).toFixed(2)}
+                      </span>
+                      <span className="pdv-tag info">
+                        Ejecutado: ${Number(grupoActivo.monto_ejecutado).toFixed(2)}
+                      </span>
+                    </div>
+                  )
+                })()}
 
                 {esComercial && !pdvSeleccionado && (
                   <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>
@@ -552,7 +570,7 @@ export default function Home() {
                           <tr key={item.id}>
                             <td className="item-name">{item.suministroNombre}</td>
                             <td>
-                              <span className={`type-badge ${item.tipoId === 1 ? 'oficina' : 'limpieza'}`}>
+                              <span className={`type-badge ${item.grupoPresupuestoId === 1 ? 'oficina' : 'limpieza'}`}>
                                 {item.tipoNombre}
                               </span>
                             </td>
@@ -601,7 +619,7 @@ export default function Home() {
             <div className="submit-section">
               <button
                 onClick={handlePedido}
-                disabled={enviando || carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido}
+                disabled={debeDeshabilitarBoton}
                 className="submit-button">
                 {enviando ? 'Enviando pedido...' : 'Realizar Pedido'}
               </button>
