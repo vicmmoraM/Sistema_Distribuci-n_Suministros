@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '../../../api/axios'
 import DepartmentsSection from './DepartmentsSection'
+import GestionConfiguracionSection from './GestionConfiguracionSection'
 import SupplyAccessSection from './SupplyAccessSection'
 
 const SUPPLIES_PAGE_SIZE = 10
@@ -34,6 +35,8 @@ export default function SuppliesSection({
   onPdvFilterChange,
   regionsMeta,
   zonesMeta,
+  statesMeta,
+  supervisoresMeta,
   pdvs,
   onEditPdv,
   categories,
@@ -46,6 +49,7 @@ export default function SuppliesSection({
   onDepartmentFilterChange,
   onEditDepartment,
   onDeleteDepartment,
+  gruposPresupuesto,
   onNotify,
   EditIcon,
   TrashIcon,
@@ -192,6 +196,7 @@ export default function SuppliesSection({
     'supply-access': 'Configura qué suministros puede solicitar cada PDV o departamento',
     'categories': 'Administra las categorías y tipos de suministros',
     'departamentos': 'Gestión de departamentos de la organización',
+    'gestion-configuracion': 'Configura ventanas de pedido para departamentos y fechas de pedido de PDVs por región',
   }
 
   return (
@@ -543,9 +548,16 @@ export default function SuppliesSection({
           onDepartmentFilterChange={onDepartmentFilterChange}
           onEditDepartment={onEditDepartment}
           onDeleteDepartment={onDeleteDepartment}
+          gruposPresupuesto={gruposPresupuesto}
           providersMeta={providersMeta}
           EditIcon={EditIcon}
           TrashIcon={TrashIcon}
+        />
+      )}
+
+      {suppliesActiveTab === 'gestion-configuracion' && (
+        <GestionConfiguracionSection
+          onNotify={onNotify}
         />
       )}
     </div>

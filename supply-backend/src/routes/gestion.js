@@ -317,4 +317,193 @@ router.get('/supplies/export/excel', async (req, res) => {
 	}
 })
 
+// ============================================================
+// NUEVA FUNCIONALIDAD: Gestión de Configuración de Departamentos y PDVs
+// ============================================================
+
+// GET: Obtener configuración de ventana de pedidos por departamento
+router.get('/departamentos/ventana-pedidos', async (req, res) => {
+	try {
+		const [[windowColumnsInfo]] = await pool.query(`
+			SELECT COUNT(*) AS total
+			FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'departamentos'
+			  AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')
+		`)
+		const hasDepartmentWindowColumns = Number(windowColumnsInfo?.total || 0) === 2
+
+		const [rows] = await pool.query(`
+			SELECT 
+				id_departamento,
+				descripcion,
+				${hasDepartmentWindowColumns ? 'dias_inicio_ventana' : '1 AS dias_inicio_ventana'},
+				${hasDepartmentWindowColumns ? 'dias_fin_ventana' : '3 AS dias_fin_ventana'}
+			FROM departamentos
+			ORDER BY descripcion ASC
+		`)
+		res.json(rows || [])
+	} catch (err) {
+		console.error('Error obteniendo ventana de pedidos:', err.message)
+		res.status(500).json({ error: 'Error al obtener configuración de ventana de pedidos' })
+	}
+})
+
+// PUT: Actualizar ventana de pedidos para todos los departamentos
+router.put('/departamentos/ventana-pedidos/actualizar-todos', async (req, res) => {
+	try {
+		const { dias_inicio_ventana, dias_fin_ventana } = req.body
+
+		const [[windowColumnsInfo]] = await pool.query(`
+			SELECT COUNT(*) AS total
+			FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'departamentos'
+			  AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')
+		`)
+		const hasDepartmentWindowColumns = Number(windowColumnsInfo?.total || 0) === 2
+		
+		if (!dias_inicio_ventana || !dias_fin_ventana || dias_inicio_ventana < 1 || dias_fin_ventana > 31 || dias_inicio_ventana > dias_fin_ventana) {
+			return res.status(400).json({ error: 'Valores inválidos para la ventana de pedidos' })
+		}
+
+		if (!hasDepartmentWindowColumns) {
+			return res.status(400).json({ error: 'La base de datos aún no tiene los campos de ventana para departamentos. Ejecuta la migración correspondiente.' })
+		}
+
+		await pool.query(`
+			UPDATE departamentos
+			SET 
+				dias_inicio_ventana = ?,
+				dias_fin_ventana = ?
+		`, [dias_inicio_ventana, dias_fin_ventana])
+
+		res.json({ message: 'Ventana de pedidos actualizada para todos los departamentos', dias_inicio_ventana, dias_fin_ventana })
+	} catch (err) {
+		console.error('Error actualizando ventana de pedidos:', err.message)
+		res.status(500).json({ error: 'Error al actualizar ventana de pedidos' })
+	}
+})
+
+// GET: Obtener ventanas de pedido de PDVs agrupadas por región
+router.get('/pdvs/configuracion-por-region', async (req, res) => {
+	try {
+		const [rows] = await pool.query(`
+			SELECT 
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.id_region
+					ELSE r.id_region
+				END as id_region,
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.descripcion
+					ELSE r.descripcion
+				END as region,
+				COUNT(DISTINCT p.id_pdv) as cantidad_pdvs,
+				COUNT(DISTINCT zc.id_zona_comercial) as cantidad_zonas,
+				CASE
+					WHEN COUNT(DISTINCT CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END) = 1
+					THEN MAX(CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END)
+					ELSE NULL
+				END as dia_inicio,
+				CASE
+					WHEN COUNT(DISTINCT CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END) = 1
+					THEN MAX(CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END)
+					ELSE NULL
+				END as dia_fin,
+				CASE
+					WHEN COUNT(DISTINCT CONCAT(
+						COALESCE(CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END, ''),
+						'-',
+						COALESCE(CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END, '')
+					)) <= 1
+					THEN 1 ELSE 0
+				END as ventana_uniforme,
+				GROUP_CONCAT(DISTINCT zc.zona ORDER BY zc.zona SEPARATOR ', ') as zonas
+			FROM regiones r
+			INNER JOIN regiones ro ON ro.descripcion = 'Oriente'
+			INNER JOIN ciudades c ON r.id_region = c.id_region
+			INNER JOIN zonas_comerciales zc ON c.id_ciudad = zc.id_ciudad
+			INNER JOIN pdvs p ON zc.id_zona_comercial = p.id_zona_comercial
+			LEFT JOIN zona_ventanas_pedido zvp ON zc.id_zona_comercial = zvp.id_zona_comercial AND zvp.activo = 1
+			WHERE r.descripcion <> 'Sin Region'
+			GROUP BY 
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.id_region
+					ELSE r.id_region
+				END,
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.descripcion
+					ELSE r.descripcion
+				END
+			HAVING COUNT(DISTINCT p.id_pdv) > 0
+			ORDER BY region ASC
+		`)
+		res.json(rows || [])
+	} catch (err) {
+		console.error('Error obteniendo configuración por región:', err.message)
+		res.status(500).json({ error: 'Error al obtener configuración por región' })
+	}
+})
+
+// PUT: Actualizar ventana de pedidos de todos los PDVs de una región
+router.put('/pdvs/ventana-pedidos/region/:id_region', async (req, res) => {
+	try {
+		const regionId = Number(req.params.id_region)
+		const { dia_inicio, dia_fin } = req.body
+
+		if (!regionId || !dia_inicio || !dia_fin || dia_inicio < 1 || dia_fin > 31 || dia_inicio > dia_fin) {
+			return res.status(400).json({ error: 'Rango de fechas inválido para la región.' })
+		}
+
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+
+			const [zones] = await conn.query(
+				`SELECT DISTINCT zc.id_zona_comercial
+				 FROM ciudades c
+				 INNER JOIN zonas_comerciales zc ON zc.id_ciudad = c.id_ciudad
+				 INNER JOIN pdvs p ON p.id_zona_comercial = zc.id_zona_comercial
+				 WHERE c.id_region = ?`,
+				[regionId]
+			)
+
+			if (zones.length === 0) {
+				await conn.rollback()
+				return res.status(404).json({ error: 'No se encontraron zonas con PDVs para esa región.' })
+			}
+
+			for (const zone of zones) {
+				await conn.query(
+					`INSERT INTO zona_ventanas_pedido (id_zona_comercial, dia_inicio, dia_fin, activo)
+					 VALUES (?, ?, ?, 1)
+					 ON DUPLICATE KEY UPDATE
+					 dia_inicio = VALUES(dia_inicio),
+					 dia_fin = VALUES(dia_fin),
+					 activo = VALUES(activo),
+					 actualizado_en = CURRENT_TIMESTAMP`,
+					[zone.id_zona_comercial, dia_inicio, dia_fin]
+				)
+			}
+
+			await conn.commit()
+			res.json({
+				message: 'Ventana de pedidos actualizada para la región.',
+				id_region: regionId,
+				dia_inicio,
+				dia_fin,
+				zonas_actualizadas: zones.length,
+			})
+		} catch (txErr) {
+			await conn.rollback()
+			throw txErr
+		} finally {
+			conn.release()
+		}
+	} catch (err) {
+		console.error('Error actualizando ventana de pedidos por región:', err.message)
+		res.status(500).json({ error: 'Error al actualizar la ventana de pedidos de la región' })
+	}
+})
+
 module.exports = router
