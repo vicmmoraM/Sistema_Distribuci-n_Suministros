@@ -70,8 +70,11 @@ router.get('/meta', async (req, res) => {
     const [regiones] = await pool.query(
       'SELECT id_region, descripcion FROM regiones ORDER BY descripcion ASC'
     )
+    const [gruposPresupuesto] = await pool.query(
+      'SELECT id_grupo_presupuesto, descripcion FROM grupos_presupuesto WHERE activo = 1 ORDER BY id_grupo_presupuesto ASC'
+    )
 
-    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, ciudades, gruposPdvs, estadosPdvs, supervisores, regiones })
+    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, ciudades, gruposPdvs, estadosPdvs, supervisores, regiones, gruposPresupuesto })
   } catch (err) {
     console.error('Error cargando metadatos admin:', err.message)
     return res.status(500).json({ error: 'Error al cargar metadatos administrativos.' })

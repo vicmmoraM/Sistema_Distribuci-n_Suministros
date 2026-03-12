@@ -65,8 +65,10 @@ router.get('/tipo-suministros', requireAuth, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT
         ts.id_tipo_suministro,
-        ts.descripcion
+        ts.descripcion,
+        COALESCE(gts.id_grupo_presupuesto, 0) AS id_grupo_presupuesto
       FROM tipo_suministros ts
+      LEFT JOIN grupo_tipos_suministro gts ON gts.id_tipo_suministro = ts.id_tipo_suministro
       INNER JOIN suministros s ON s.id_tipo_suministro = ts.id_tipo_suministro
       WHERE (
         (? IS NOT NULL AND EXISTS (

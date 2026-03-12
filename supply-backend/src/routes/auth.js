@@ -119,27 +119,42 @@ async function getDepartmentInfo(conn, departmentId) {
   const periodoMes = now.getMonth() + 1
 
   const [deptRows] = await conn.query(
-    `SELECT
-      d.descripcion AS departmentName,
-      COALESCE(pd.monto_autorizado, 0) AS departmentBudget
-     FROM departamentos d
-     LEFT JOIN presupuesto_departamentos pd
-       ON pd.id_departamento = d.id_departamento
-      AND pd.periodo_anio = ?
-      AND (pd.periodo_mes = ? OR pd.periodo_mes = 0)
-     WHERE d.id_departamento = ?
-     ORDER BY CASE WHEN pd.periodo_mes = ? THEN 0 ELSE 1 END
-     LIMIT 1`,
-    [periodoAnio, periodoMes, departmentId, periodoMes]
+    'SELECT descripcion AS departmentName FROM departamentos WHERE id_departamento = ? LIMIT 1',
+    [departmentId]
   )
 
   if (deptRows.length === 0) {
-    return { departmentName: null, departmentBudget: 0 }
+    return { departmentName: null, departmentBudget: 0, departmentBudgets: [] }
   }
+
+  const [budgetRows] = await conn.query(
+    `SELECT gp.id_grupo_presupuesto, gp.descripcion AS descripcion,
+            COALESCE(pd.monto_autorizado, 0) AS monto_autorizado,
+            COALESCE(pd.monto_ejecutado, 0) AS monto_ejecutado
+     FROM grupos_presupuesto gp
+     LEFT JOIN presupuesto_departamentos pd
+       ON pd.id_grupo_presupuesto = gp.id_grupo_presupuesto
+      AND pd.id_departamento = ?
+      AND pd.periodo_anio = ?
+      AND pd.periodo_mes = ?
+     WHERE gp.activo = 1
+     ORDER BY gp.id_grupo_presupuesto`,
+    [departmentId, periodoAnio, periodoMes]
+  )
+
+  const departmentBudgets = budgetRows.map(r => ({
+    id_grupo_presupuesto: r.id_grupo_presupuesto,
+    descripcion: r.descripcion,
+    monto_autorizado: Number(r.monto_autorizado),
+    monto_ejecutado: Number(r.monto_ejecutado),
+  }))
+
+  const departmentBudget = departmentBudgets.reduce((s, g) => s + g.monto_autorizado, 0)
 
   return {
     departmentName: deptRows[0].departmentName,
-    departmentBudget: Number(deptRows[0].departmentBudget || 0),
+    departmentBudget,
+    departmentBudgets,
   }
 }
 
@@ -348,7 +363,7 @@ router.post('/login', async (req, res) => {
       await syncUser(conn, user.login, user.nombres, userRealDepartmentId)
 
       // Obtener el nombre del departamento
-      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, userRealDepartmentId)
+      const { departmentName, departmentBudget, departmentBudgets } = await getDepartmentInfo(conn, userRealDepartmentId)
       const permissionsData = await getRolePermissions(conn, user.id_rol)
 
       await conn.commit()
@@ -368,6 +383,7 @@ router.post('/login', async (req, res) => {
           departamento: userRealDepartmentId,
           departmentName: departmentName,
           departmentBudget: departmentBudget,
+          departmentBudgets: departmentBudgets,
           roleId: permissionsData.roleId,
           roleName: permissionsData.roleName,
           permissions: {
@@ -452,7 +468,7 @@ router.post('/login', async (req, res) => {
       )
       userRoleId = userRows.length > 0 ? userRows[0].id_rol : null
 
-      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, userRealDepartmentId)
+      const { departmentName, departmentBudget, departmentBudgets } = await getDepartmentInfo(conn, userRealDepartmentId)
       const permissionsData = await getRolePermissions(conn, userRoleId)
 
       await conn.commit()
@@ -472,6 +488,7 @@ router.post('/login', async (req, res) => {
           departamento: userRealDepartmentId,
           departmentName: departmentName,
           departmentBudget: departmentBudget,
+          departmentBudgets: departmentBudgets,
           roleId: permissionsData.roleId,
           roleName: permissionsData.roleName,
           permissions: {
@@ -533,7 +550,7 @@ router.get('/me', async (req, res) => {
       }
 
       const currentUser = userRows[0]
-      const { departmentName, departmentBudget } = await getDepartmentInfo(conn, currentUser.id_departamento)
+      const { departmentName, departmentBudget, departmentBudgets } = await getDepartmentInfo(conn, currentUser.id_departamento)
       const permissionsData = await getRolePermissions(conn, currentUser.id_rol)
 
       req.session.userId = currentUser.id_usuario
@@ -550,6 +567,7 @@ router.get('/me', async (req, res) => {
         departamento: currentUser.id_departamento,
         departmentName: departmentName,
         departmentBudget: departmentBudget,
+        departmentBudgets: departmentBudgets,
         roleId: permissionsData.roleId,
         roleName: permissionsData.roleName,
         permissions: {
