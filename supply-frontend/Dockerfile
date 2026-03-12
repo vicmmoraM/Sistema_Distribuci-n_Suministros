@@ -14,6 +14,10 @@ COPY package*.json ./
 # Instalar dependencias
 RUN npm install
 
+# Recibir variables de entorno de build
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 # Copiar el código fuente
 COPY . .
 
