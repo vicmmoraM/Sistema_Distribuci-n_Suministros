@@ -57,7 +57,7 @@ services:
   # Frontend React
   # ────────────────────────────────────────────────────────────────────────────
   frontend:
-    image: ghcr.io/devgrantfc/farmcorp-supply-frontend:1.0.0-prod
+    image: ghcr.io/devgrantfc/farmcorp-supply-frontend-api:1.0.0-prod
     container_name: supply-frontend
     ports:
       - "5173:5173"
