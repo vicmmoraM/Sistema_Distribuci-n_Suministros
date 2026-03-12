@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth')
 const bcrypt = require('bcrypt')
 const adminDepartamentosRoutes = require('./admin/departamentos')
 const adminSupplyAccessRoutes = require('./admin/supplyAccess')
+const { ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
 
 async function requireAdminAccess(req, res, next) {
   try {
@@ -507,6 +508,8 @@ router.get('/pdvs', async (req, res) => {
   const { search = '', region = '', zone = '', provider = '' } = req.query
 
   try {
+    await ensureCurrentPdvBudgets(pool)
+
     const params = []
     const conditions = []
 
@@ -551,7 +554,8 @@ router.get('/pdvs', async (req, res) => {
         ep.descripcion AS estado,
         gp.descripcion AS grupo,
         gp.monto_autorizado,
-        COALESCE(sv.nombres, 'Sin supervisor') AS supervisor
+          COALESCE(p.cupo_disponible, gp.monto_autorizado) AS cupo_disponible,
+          COALESCE(sv.nombres, 'Sin supervisor') AS supervisor
       FROM pdvs p
       LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
       INNER JOIN zonas_comerciales zc ON zc.id_zona_comercial = p.id_zona_comercial
@@ -627,6 +631,52 @@ router.put('/pdvs/:id', async (req, res) => {
   } catch (err) {
     console.error('Error actualizando PDV:', err.message)
     return res.status(500).json({ error: 'Error al actualizar PDV.' })
+  }
+})
+
+// =====================================================
+// PROVEEDORES - Creación rápida
+// =====================================================
+
+router.post('/proveedores', async (req, res) => {
+  const { nombre_proveedor } = req.body
+  if (!nombre_proveedor || nombre_proveedor.trim() === '') {
+    return res.status(400).json({ error: 'El nombre del proveedor es obligatorio.' })
+  }
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO proveedores (nombre_proveedor) VALUES (?)',
+      [nombre_proveedor.trim()]
+    )
+    return res.status(201).json({ id_proveedor: result.insertId, nombre_proveedor: nombre_proveedor.trim() })
+  } catch (err) {
+    console.error('Error creando proveedor:', err.message)
+    return res.status(500).json({ error: 'Error al crear el proveedor.' })
+  }
+})
+
+// =====================================================
+// GRUPOS PDV - Creación rápida
+// =====================================================
+
+router.post('/grupos_pdvs', async (req, res) => {
+  const { descripcion, monto_autorizado } = req.body
+  if (!descripcion || descripcion.trim() === '') {
+    return res.status(400).json({ error: 'La descripción del grupo es obligatoria.' })
+  }
+  const monto = Number(monto_autorizado)
+  if (isNaN(monto) || monto < 0) {
+    return res.status(400).json({ error: 'El monto autorizado debe ser un número mayor o igual a 0.' })
+  }
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO grupo_pdvs (descripcion, monto_autorizado) VALUES (?, ?)',
+      [descripcion.trim().toUpperCase(), monto]
+    )
+    return res.status(201).json({ id_grupo_pdv: result.insertId, descripcion: descripcion.trim().toUpperCase(), monto_autorizado: monto })
+  } catch (err) {
+    console.error('Error creando grupo PDV:', err.message)
+    return res.status(500).json({ error: 'Error al crear el grupo PDV.' })
   }
 })
 

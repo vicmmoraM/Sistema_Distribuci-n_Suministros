@@ -39,6 +39,7 @@ export default function SuppliesSection({
   supervisoresMeta,
   pdvs,
   onEditPdv,
+  onResetPdvBudget,
   categories,
   categoryFilters,
   onCategoryFilterChange,
@@ -49,10 +50,12 @@ export default function SuppliesSection({
   onDepartmentFilterChange,
   onEditDepartment,
   onDeleteDepartment,
+  onResetDepartmentBudget,
   gruposPresupuesto,
   onNotify,
   EditIcon,
   TrashIcon,
+  RefreshIcon,
   PlusIcon,
 }) {
   const [suppliesPage, setSuppliesPage] = useState(1)
@@ -438,6 +441,7 @@ export default function SuppliesSection({
                   <th>Zona Comercial</th>
                   <th>Ciudad</th>
                   <th>Monto Autorizado</th>
+                  <th>Disponible</th>
                   <th>Estado</th>
                   <th>Proveedor Principal</th>
                   <th>Acciones</th>
@@ -451,12 +455,14 @@ export default function SuppliesSection({
                     <td data-label="Zona">{item.zona_comercial}</td>
                     <td data-label='Ciudad'>{item.ciudad}</td>
                     <td data-label="Monto Autorizado">${Number(item.monto_autorizado || 0).toFixed(2)}</td>
+                    <td data-label="Disponible">${Number(item.cupo_disponible ?? item.monto_autorizado ?? 0).toFixed(2)}</td>
                     <td data-label="Estado">
                       <span className={getStatusClassName(item.estado)}>{item.estado}</span>
                     </td>
                     <td data-label="Proveedor">{item.proveedor}</td>
                     <td data-label="Acciones" className="actions-cell">
                       <button type="button" className="icon-btn" onClick={() => onEditPdv(item)} title="Editar PDV"><EditIcon /></button>
+                      <button type="button" className="icon-btn admin-reset-action" onClick={() => onResetPdvBudget(item)} title="Restablecer presupuesto del PDV"><RefreshIcon /></button>
                     </td>
                   </tr>
                 ))}
@@ -548,10 +554,12 @@ export default function SuppliesSection({
           onDepartmentFilterChange={onDepartmentFilterChange}
           onEditDepartment={onEditDepartment}
           onDeleteDepartment={onDeleteDepartment}
+          onResetDepartmentBudget={onResetDepartmentBudget}
           gruposPresupuesto={gruposPresupuesto}
           providersMeta={providersMeta}
           EditIcon={EditIcon}
           TrashIcon={TrashIcon}
+          RefreshIcon={RefreshIcon}
         />
       )}
 

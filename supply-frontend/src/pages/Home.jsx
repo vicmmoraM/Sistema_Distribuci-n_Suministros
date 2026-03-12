@@ -19,7 +19,7 @@ const ESTADO_BADGE = {
 }
 
 export default function Home() {
-  const { user, loading } = useAuth()
+  const { user, loading, refreshUser } = useAuth()
   const { isCollapsed } = useSidebar()
   const { refreshTriggers } = useDataRefresh()
   const { esComercial } = usePermissions()
@@ -207,6 +207,24 @@ export default function Home() {
     }
   }, [refreshTriggers.pdvs, loading, esComercial, pdvSeleccionado?.id_pdv, notify])
 
+  useEffect(() => {
+    if (loading) return undefined
+
+    const controller = new AbortController()
+    refreshUser(controller.signal).catch(() => {})
+
+    const handleWindowFocus = () => {
+      refreshUser().catch(() => {})
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+
+    return () => {
+      controller.abort()
+      window.removeEventListener('focus', handleWindowFocus)
+    }
+  }, [loading, hash, refreshUser])
+
   // 🔄 Recargar suministros cuando se actualicen en Configuración
   useEffect(() => {
     if (!tipoSeleccionado || loading) return
@@ -243,10 +261,29 @@ export default function Home() {
   const subtotalOficina = carrito.filter(i => i.grupoPresupuestoId === 1).reduce((s, i) => s + i.total, 0)
   const subtotalLimpieza = carrito.filter(i => i.grupoPresupuestoId === 2).reduce((s, i) => s + i.total, 0)
   const totalPedido = carrito.reduce((s, i) => s + i.total, 0)
+  const groupedDepartmentTotals = carrito.reduce((acc, item) => {
+    const groupId = Number(item.grupoPresupuestoId || 0)
+    acc[groupId] = (acc[groupId] || 0) + Number(item.total || 0)
+    return acc
+  }, {})
+  const departmentBudgetMap = (user?.departmentBudgets || []).reduce((acc, budget) => {
+    const groupId = Number(budget.id_grupo_presupuesto)
+    acc[groupId] = {
+      ...budget,
+      saldo: Math.max(0, Number(budget.monto_autorizado || 0) - Number(budget.monto_ejecutado || 0)),
+    }
+    return acc
+  }, {})
+  const tipoSeleccionadoObj = tiposSuministro.find((tipo) => String(tipo.id_tipo_suministro) === String(tipoSeleccionado))
+  const selectedGroupId = Number(tipoSeleccionadoObj?.id_grupo_presupuesto || 0)
+  const selectedDepartmentBudget = selectedGroupId ? departmentBudgetMap[selectedGroupId] : null
   const limiteDisponible = esComercial
-    ? Number(pdvSeleccionado?.cupo || 0)
-    : Number(user?.departmentBudget || 0)
-  const cupoExcedido = totalPedido > limiteDisponible
+    ? Number(pdvSeleccionado?.cupo_disponible ?? pdvSeleccionado?.cupo ?? 0)
+    : Number(selectedDepartmentBudget?.saldo || 0)
+  const departmentExceededGroups = Object.entries(groupedDepartmentTotals)
+    .filter(([groupId, total]) => Number(total) > Number(departmentBudgetMap[Number(groupId)]?.saldo || 0))
+    .map(([groupId]) => departmentBudgetMap[Number(groupId)]?.descripcion || 'categoria seleccionada')
+  const cupoExcedido = esComercial ? totalPedido > limiteDisponible : departmentExceededGroups.length > 0
   const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido
 
   const handleAgregar = () => {
@@ -287,7 +324,7 @@ export default function Home() {
     if (cupoExcedido) {
       setError(esComercial
         ? 'El total supera el cupo asignado al PDV.'
-        : 'El total supera el presupuesto asignado al departamento.')
+        : `El total supera el presupuesto asignado para ${departmentExceededGroups.join(', ')}.`)
       return
     }
     setEnviando(true)
@@ -298,6 +335,7 @@ export default function Home() {
         payload.pdvId = pdvSeleccionado.id_pdv
       }
       const res = await api.post('/pedidos', payload)
+      await refreshUser()
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
       setError(err.response?.data?.error || 'Error al procesar el pedido.')
@@ -438,35 +476,31 @@ export default function Home() {
                 {esComercial && pdvSeleccionado && (
                   <div className="pdv-info-tags">
                     <span className="pdv-tag cupo">
-                      Cupo: ${Number(pdvSeleccionado.cupo).toFixed(2)}
+                      Disponible: ${Number(pdvSeleccionado.cupo_disponible ?? pdvSeleccionado.cupo).toFixed(2)} / ${Number(pdvSeleccionado.cupo).toFixed(2)}
                     </span>
                     <span className="pdv-tag info">PDV: {pdvSeleccionado.descripcion}</span>
                     <span className="pdv-tag info">{pdvSeleccionado.ciudad}</span>
                   </div>
                 )}
 
-                {!esComercial && (() => {
-                  // Mostrar presupuesto solo cuando el usuario ya eligio una categoria.
-                  if (!tipoSeleccionado) return null
-
-                  const tipoObj = tiposSuministro.find(t => String(t.id_tipo_suministro) === String(tipoSeleccionado))
-                  const grupoId = tipoObj?.id_grupo_presupuesto
-                  const budgets = user?.departmentBudgets || []
-                  const grupoActivo = grupoId ? budgets.find(b => b.id_grupo_presupuesto === grupoId) : null
-
-                  if (!grupoActivo) return null
-
-                  return (
-                    <div className="pdv-info-tags">
-                      <span className="pdv-tag cupo">
-                        {grupoActivo.descripcion}: ${Number(grupoActivo.monto_autorizado).toFixed(2)}
-                      </span>
+                {!esComercial && (user?.departmentBudgets || []).length > 0 && (
+                  <div className="pdv-info-tags">
+                    {selectedDepartmentBudget ? (
+                      <>
+                        <span className="pdv-tag cupo">
+                          {selectedDepartmentBudget.descripcion}: ${Number(selectedDepartmentBudget.saldo || 0).toFixed(2)} / ${Number(selectedDepartmentBudget.monto_autorizado || 0).toFixed(2)}
+                        </span>
+                        <span className="pdv-tag info">
+                          Ejecutado: ${Number(selectedDepartmentBudget.monto_ejecutado || 0).toFixed(2)}
+                        </span>
+                      </>
+                    ) : (
                       <span className="pdv-tag info">
-                        Ejecutado: ${Number(grupoActivo.monto_ejecutado).toFixed(2)}
+                        Selecciona una categoria para ver el saldo disponible.
                       </span>
-                    </div>
-                  )
-                })()}
+                    )}
+                  </div>
+                )}
 
                 {esComercial && !pdvSeleccionado && (
                   <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>

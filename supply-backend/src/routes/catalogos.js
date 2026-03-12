@@ -4,6 +4,7 @@ const express = require('express');
 const router  = express.Router();
 const { pool } = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
+const { ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService');
 
 /**
  * GET /api/catalogos/departamentos
@@ -26,6 +27,8 @@ router.get('/departamentos', async (req, res) => {
  */
 router.get('/pdvs', requireAuth, async (req, res) => {
   try {
+    await ensureCurrentPdvBudgets(pool)
+
     const [rows] = await pool.query(`
       SELECT 
         p.id_pdv,
@@ -34,7 +37,8 @@ router.get('/pdvs', requireAuth, async (req, res) => {
         c.descripcion AS ciudad,
         COALESCE(r.descripcion, 'Sin región') AS region,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor,
-        gp.monto_autorizado AS cupo
+        gp.monto_autorizado AS cupo,
+        COALESCE(p.cupo_disponible, gp.monto_autorizado) AS cupo_disponible
       FROM pdvs p
       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
       LEFT JOIN ciudades c ON p.id_ciudad = c.id_ciudad

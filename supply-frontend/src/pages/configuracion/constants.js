@@ -44,6 +44,9 @@ export const EMPTY_PDV_FORM = {
   id_proveedor_principal: '',
   id_region: '',
   id_supervisor: '',
+  newProviderName: '',
+  newGroupName: '',
+  newGroupMonto: '',
 };
 
 export const EMPTY_DEPARTMENT_FORM = {

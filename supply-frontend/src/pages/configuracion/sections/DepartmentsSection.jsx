@@ -9,8 +9,10 @@ export default function DepartmentsSection({
   gruposPresupuesto,
   onEditDepartment,
   onDeleteDepartment,
+  onResetDepartmentBudget,
   EditIcon,
   TrashIcon,
+  RefreshIcon,
 }) {
   const [page, setPage] = useState(1)
 
@@ -89,10 +91,13 @@ export default function DepartmentsSection({
                   <td data-label="Proveedor">{item.proveedor || 'Sin proveedor'}</td>
                   {(gruposPresupuesto || []).map((grupo) => {
                     const p = getPresupuesto(grupo.id_grupo_presupuesto)
+                    const montoAutorizado = Number(p?.monto_autorizado || 0)
+                    const montoEjecutado = Number(p?.monto_ejecutado || 0)
+                    const montoDisponible = Math.max(0, montoAutorizado - montoEjecutado)
                     return (
                       <td key={grupo.id_grupo_presupuesto} data-label={grupo.descripcion}>
                         {p
-                          ? `$${Number(p.monto_autorizado).toFixed(2)} / $${Number(p.monto_ejecutado).toFixed(2)}`
+                          ? `$${montoDisponible.toFixed(2)} / $${montoAutorizado.toFixed(2)}`
                           : '—'}
                       </td>
                     )
@@ -100,6 +105,7 @@ export default function DepartmentsSection({
                   <td data-label="Usuarios">{item.total_usuarios}</td>
                   <td data-label="Acciones" className="actions-cell">
                     <button type="button" className="icon-btn" onClick={() => onEditDepartment(item)} title="Editar"><EditIcon /></button>
+                    <button type="button" className="icon-btn admin-reset-action" onClick={() => onResetDepartmentBudget(item)} title="Restablecer presupuesto del departamento"><RefreshIcon /></button>
                     <button type="button" className="danger icon-btn" onClick={() => onDeleteDepartment(item)} title="Eliminar"><TrashIcon /></button>
                   </td>
                 </tr>

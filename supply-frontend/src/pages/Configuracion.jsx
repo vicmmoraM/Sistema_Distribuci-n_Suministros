@@ -203,6 +203,35 @@ export default function Configuracion() {
     if (!loading) loadDepartments()
   }, [departmentFilters.search])
 
+  useEffect(() => {
+    if (loading || activeSection !== 'supplies') return
+
+    if (suppliesActiveTab === 'pdv-providers') {
+      loadPdvs()
+    }
+
+    if (suppliesActiveTab === 'departamentos') {
+      loadDepartments()
+    }
+  }, [activeSection, suppliesActiveTab, loading])
+
+  useEffect(() => {
+    if (loading || activeSection !== 'supplies') return undefined
+
+    const handleWindowFocus = () => {
+      if (suppliesActiveTab === 'pdv-providers') {
+        loadPdvs()
+      }
+
+      if (suppliesActiveTab === 'departamentos') {
+        loadDepartments()
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    return () => window.removeEventListener('focus', handleWindowFocus)
+  }, [activeSection, suppliesActiveTab, loading, pdvFilters.search, pdvFilters.region, pdvFilters.zone, pdvFilters.provider, departmentFilters.search])
+
   // Controlar el scroll del body cuando hay modales abiertos
   useEffect(() => {
     const isAnyModalOpen =
@@ -452,15 +481,45 @@ export default function Configuracion() {
   const submitPdv = async (event) => {
     event.preventDefault()
     try {
+      let finalProveedorId = pdvForm.id_proveedor_principal
+      let finalGrupoId = pdvForm.id_grupo_pdv
+
+      // Crear nuevo proveedor si el usuario eligió "Crear nuevo..."
+      if (pdvForm.id_proveedor_principal === '__new__') {
+        if (!pdvForm.newProviderName?.trim()) {
+          showToast('Ingresa el nombre del nuevo proveedor.', 'error')
+          return
+        }
+        const res = await api.post('/admin/proveedores', { nombre_proveedor: pdvForm.newProviderName.trim() })
+        finalProveedorId = String(res.data.id_proveedor)
+      }
+
+      // Crear nuevo grupo PDV si el usuario eligió "Crear nuevo..."
+      if (pdvForm.id_grupo_pdv === '__new__') {
+        if (!pdvForm.newGroupName?.trim()) {
+          showToast('Ingresa el nombre del nuevo grupo PDV.', 'error')
+          return
+        }
+        if (!pdvForm.newGroupMonto || isNaN(Number(pdvForm.newGroupMonto))) {
+          showToast('Ingresa el monto autorizado del nuevo grupo.', 'error')
+          return
+        }
+        const res = await api.post('/admin/grupos_pdvs', {
+          descripcion: pdvForm.newGroupName.trim(),
+          monto_autorizado: Number(pdvForm.newGroupMonto),
+        })
+        finalGrupoId = String(res.data.id_grupo_pdv)
+      }
+
       if (pdvModalMode === 'create') {
-        await api.post('/admin/pdvs', pdvForm)
+        await api.post('/admin/pdvs', { ...pdvForm, id_proveedor_principal: finalProveedorId, id_grupo_pdv: finalGrupoId })
         showToast('PDV creado correctamente.')
       } else {
         await api.put(`/admin/pdvs/${editingPdvId}`, {
           direccion: pdvForm.direccion,
           id_ciudad: pdvForm.id_ciudad,
-          id_proveedor_principal: pdvForm.id_proveedor_principal,
-          id_grupo_pdv: pdvForm.id_grupo_pdv,
+          id_proveedor_principal: finalProveedorId,
+          id_grupo_pdv: finalGrupoId,
           id_zona_comercial: pdvForm.id_zona_comercial,
           id_supervisor: pdvForm.id_supervisor
         })
@@ -471,6 +530,7 @@ export default function Configuracion() {
       setEditingPdvId(null)
       setPdvForm(EMPTY_PDV_FORM)
       await loadPdvs()
+      await loadMeta() // Actualizar listas de proveedores y grupos
       refreshPdvs() // 🔄 Notificar a otras páginas que los PDVs cambiaron
     } catch (err) {
       showToast(err.response?.data?.error || 'No se pudo guardar el PDV.', 'error')
@@ -596,6 +656,27 @@ export default function Configuracion() {
     })
   }
 
+  const resetPdvBudget = async (pdv) => {
+    try {
+      await api.post('/gestion/pdvs/reset-cupos', { id_pdv: pdv.id_pdv })
+      showToast(`Presupuesto restablecido para el PDV ${pdv.descripcion}.`)
+      await Promise.all([loadPdvs(), loadOverview()])
+      refreshPdvs()
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo restablecer el presupuesto del PDV.', 'error')
+    }
+  }
+
+  const resetDepartmentBudget = async (department) => {
+    try {
+      await api.post('/gestion/departamentos/reset-presupuesto', { id_departamento: department.id_departamento })
+      showToast(`Presupuesto restablecido para el departamento ${department.descripcion}.`)
+      await Promise.all([loadDepartments(), loadOverview()])
+    } catch (err) {
+      showToast(err.response?.data?.error || 'No se pudo restablecer el presupuesto del departamento.', 'error')
+    }
+  }
+
   return (
     <div className="configuracion-container">
       <Layout />
@@ -662,6 +743,7 @@ export default function Configuracion() {
                     supervisoresMeta={meta.supervisores || []}
                     pdvs={pdvs}
                     onEditPdv={openEditPdv}
+                    onResetPdvBudget={resetPdvBudget}
                     categories={categories}
                     categoryFilters={categoryFilters}
                     onCategoryFilterChange={handleCategoryFilterChange}
@@ -672,10 +754,12 @@ export default function Configuracion() {
                     onDepartmentFilterChange={handleDepartmentFilterChange}
                     onEditDepartment={openEditDepartment}
                     onDeleteDepartment={deleteDepartment}
+                    onResetDepartmentBudget={resetDepartmentBudget}
                     gruposPresupuesto={meta.gruposPresupuesto || []}
                     onNotify={showToast}
                     EditIcon={EditIcon}
                     TrashIcon={TrashIcon}
+                    RefreshIcon={RefreshIcon}
                     PlusIcon={PlusIcon}
                   />
                 )}

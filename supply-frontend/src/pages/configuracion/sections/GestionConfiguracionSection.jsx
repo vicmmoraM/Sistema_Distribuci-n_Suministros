@@ -17,6 +17,10 @@ export default function GestionConfiguracionSection({
   const [pdvsPorRegion, setPdvsPorRegion] = useState([])
   const [updatingRegionId, setUpdatingRegionId] = useState(null)
 
+  // Reset de cupos / presupuestos
+  const [resettingPdvs, setResettingPdvs] = useState(false)
+  const [resettingDepts, setResettingDepts] = useState(false)
+
   // Cargar datos iniciales
   useEffect(() => {
     loadAllData()
@@ -111,6 +115,36 @@ export default function GestionConfiguracionSection({
     }
   }
 
+  // ============================================================
+  // RESET DE CUPOS / PRESUPUESTO
+  // ============================================================
+
+  const handleResetCuposPdvs = async () => {
+    if (!window.confirm('¿Reiniciar los cupos disponibles de TODOS los PDVs al monto de su grupo?')) return
+    setResettingPdvs(true)
+    try {
+      const res = await api.post('/gestion/pdvs/reset-cupos')
+      if (typeof onNotify === 'function') onNotify(res.data.message || 'Cupos reiniciados.')
+    } catch (err) {
+      if (typeof onNotify === 'function') onNotify(err.response?.data?.error || 'Error al reiniciar cupos.', 'error')
+    } finally {
+      setResettingPdvs(false)
+    }
+  }
+
+  const handleResetPresupuestoDepts = async () => {
+    if (!window.confirm('¿Reiniciar el monto ejecutado de TODOS los departamentos (periodo actual)?')) return
+    setResettingDepts(true)
+    try {
+      const res = await api.post('/gestion/departamentos/reset-presupuesto')
+      if (typeof onNotify === 'function') onNotify(res.data.message || 'Presupuesto reiniciado.')
+    } catch (err) {
+      if (typeof onNotify === 'function') onNotify(err.response?.data?.error || 'Error al reiniciar presupuesto.', 'error')
+    } finally {
+      setResettingDepts(false)
+    }
+  }
+
   const handleGuardarRegion = async (region) => {
     const diaInicio = Number(region.dia_inicio)
     const diaFin = Number(region.dia_fin)
@@ -162,6 +196,12 @@ export default function GestionConfiguracionSection({
           onClick={() => setActiveTab('pdvs')}
         >
           PDVs - Fechas por Región
+        </button>
+        <button
+          className={`tab ${activeTab === 'reset' ? 'active' : ''}`}
+          onClick={() => setActiveTab('reset')}
+        >
+          Reinicio de Cupos
         </button>
       </div>
 
@@ -303,6 +343,51 @@ export default function GestionConfiguracionSection({
         <p className="empty-message">No hay PDVs agrupados por región para configurar.</p>
         )}
       </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: Reinicio de Cupos */}
+      {activeTab === 'reset' && (
+        <div className="tab-content reset-tab">
+          <div className="departamentos-config">
+            <h3>Reinicio de Cupos y Presupuesto</h3>
+            <p className="help-text">
+              Utiliza estas acciones al inicio de cada periodo para restablecer los montos disponibles.
+              Los pedidos en espera pendientes de aprobación no se restablecen automáticamente.
+            </p>
+
+            <div className="reset-cards">
+              <div className="reset-card">
+                <h4>Cupos de PDVs</h4>
+                <p>
+                  Reinicia el <strong>cupo disponible</strong> de todos los PDVs al monto
+                  autorizado de su grupo. Úsalo al inicio de cada mes.
+                </p>
+                <button
+                  className="save-button danger"
+                  onClick={handleResetCuposPdvs}
+                  disabled={resettingPdvs}
+                >
+                  {resettingPdvs ? 'Reiniciando...' : 'Reiniciar cupos de PDVs'}
+                </button>
+              </div>
+
+              <div className="reset-card">
+                <h4>Presupuesto de Departamentos</h4>
+                <p>
+                  Reinicia el <strong>monto ejecutado</strong> de todos los departamentos
+                  en el periodo actual, dejando disponible el presupuesto completo.
+                </p>
+                <button
+                  className="save-button danger"
+                  onClick={handleResetPresupuestoDepts}
+                  disabled={resettingDepts}
+                >
+                  {resettingDepts ? 'Reiniciando...' : 'Reiniciar presupuesto de departamentos'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

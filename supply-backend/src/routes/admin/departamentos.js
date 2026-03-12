@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { pool } = require('../../config/db')
+const { ensureCurrentDepartmentBudgets } = require('../../services/BudgetPeriodService')
 
 router.post('/departamentos', async (req, res) => {
   const { descripcion, id_proveedor, presupuestos } = req.body
@@ -55,6 +56,8 @@ router.get('/departamentos', async (req, res) => {
   const { search = '' } = req.query
 
   try {
+    await ensureCurrentDepartmentBudgets(pool)
+
     const params = []
     const conditions = []
 

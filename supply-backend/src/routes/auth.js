@@ -6,6 +6,7 @@ const express = require('express')
 const router = express.Router()
 const { pool } = require('../config/db')
 const bcrypt = require('bcrypt')
+const { ensureCurrentDepartmentBudgets } = require('../services/BudgetPeriodService')
 
 function normalizeText(value) {
   return String(value || '')
@@ -118,6 +119,8 @@ async function getDepartmentInfo(conn, departmentId) {
   const periodoAnio = now.getFullYear()
   const periodoMes = now.getMonth() + 1
 
+  await ensureCurrentDepartmentBudgets(conn, now)
+
   const [deptRows] = await conn.query(
     'SELECT descripcion AS departmentName FROM departamentos WHERE id_departamento = ? LIMIT 1',
     [departmentId]
@@ -129,17 +132,22 @@ async function getDepartmentInfo(conn, departmentId) {
 
   const [budgetRows] = await conn.query(
     `SELECT gp.id_grupo_presupuesto, gp.descripcion AS descripcion,
-            COALESCE(pd.monto_autorizado, 0) AS monto_autorizado,
-            COALESCE(pd.monto_ejecutado, 0) AS monto_ejecutado
+            COALESCE(pdm.monto_autorizado, pda.monto_autorizado, 0) AS monto_autorizado,
+            COALESCE(pdm.monto_ejecutado, pda.monto_ejecutado, 0) AS monto_ejecutado
      FROM grupos_presupuesto gp
-     LEFT JOIN presupuesto_departamentos pd
-       ON pd.id_grupo_presupuesto = gp.id_grupo_presupuesto
-      AND pd.id_departamento = ?
-      AND pd.periodo_anio = ?
-      AND pd.periodo_mes = ?
+     LEFT JOIN presupuesto_departamentos pdm
+       ON pdm.id_grupo_presupuesto = gp.id_grupo_presupuesto
+      AND pdm.id_departamento = ?
+      AND pdm.periodo_anio = ?
+      AND pdm.periodo_mes = ?
+     LEFT JOIN presupuesto_departamentos pda
+       ON pda.id_grupo_presupuesto = gp.id_grupo_presupuesto
+      AND pda.id_departamento = ?
+      AND pda.periodo_anio = ?
+      AND pda.periodo_mes = 0
      WHERE gp.activo = 1
      ORDER BY gp.id_grupo_presupuesto`,
-    [departmentId, periodoAnio, periodoMes]
+    [departmentId, periodoAnio, periodoMes, departmentId, periodoAnio]
   )
 
   const departmentBudgets = budgetRows.map(r => ({
@@ -149,7 +157,7 @@ async function getDepartmentInfo(conn, departmentId) {
     monto_ejecutado: Number(r.monto_ejecutado),
   }))
 
-  const departmentBudget = departmentBudgets.reduce((s, g) => s + g.monto_autorizado, 0)
+  const departmentBudget = departmentBudgets.reduce((s, g) => s + Math.max(0, g.monto_autorizado - g.monto_ejecutado), 0)
 
   return {
     departmentName: deptRows[0].departmentName,
