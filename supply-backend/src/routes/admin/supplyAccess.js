@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const { pool } = require('../../config/db')
+const ExcelJS = require('exceljs')
 
 const SCOPE_CONFIG = {
   pdv: {
@@ -27,6 +28,26 @@ function normalizePositiveInt(value) {
   return parsed
 }
 
+function buildUniqueSheetName(baseName, existingNames) {
+  const forbiddenCharsPattern = /[\\/*?:\[\]]/g
+  const sanitizedBase = String(baseName || 'PDV')
+    .replace(forbiddenCharsPattern, '-')
+    .trim() || 'PDV'
+
+  let candidate = sanitizedBase.slice(0, 31)
+  let suffix = 1
+
+  while (existingNames.has(candidate)) {
+    const suffixText = ` (${suffix})`
+    const allowedBaseLength = Math.max(1, 31 - suffixText.length)
+    candidate = `${sanitizedBase.slice(0, allowedBaseLength)}${suffixText}`
+    suffix += 1
+  }
+
+  existingNames.add(candidate)
+  return candidate
+}
+
 router.get('/supply-access/options', async (_req, res) => {
   try {
     const [pdvs] = await pool.query(
@@ -36,18 +57,30 @@ router.get('/supply-access/options', async (_req, res) => {
         p.id_proveedor_principal,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor_principal,
         z.zona,
-        c.descripcion AS ciudad,
-        r.descripcion AS region
+        COALESCE(c.descripcion, 'Sin ciudad') AS ciudad,
+        COALESCE(r.descripcion, 'Sin región') AS region
       FROM pdvs p
       LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
       INNER JOIN zonas_comerciales z ON z.id_zona_comercial = p.id_zona_comercial
-      INNER JOIN ciudades c ON c.id_ciudad = z.id_ciudad
-      INNER JOIN regiones r ON r.id_region = c.id_region
+      LEFT JOIN ciudades c ON c.id_ciudad = p.id_ciudad
+      LEFT JOIN regiones r ON r.id_region = c.id_region
       ORDER BY p.codigo_centro_costo ASC`
     )
 
     const [departamentos] = await pool.query(
-      'SELECT id_departamento, descripcion FROM departamentos ORDER BY descripcion ASC'
+      `SELECT
+        d.id_departamento,
+        d.descripcion,
+        dpr.id_proveedor,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor_principal
+      FROM departamentos d
+      LEFT JOIN (
+        SELECT id_departamento, id_proveedor
+        FROM departamento_proveedores_rotacion
+        WHERE orden_rotacion = 1
+      ) dpr ON dpr.id_departamento = d.id_departamento
+      LEFT JOIN proveedores pr ON pr.id_proveedor = dpr.id_proveedor
+      ORDER BY d.descripcion ASC`
     )
 
     const [suministros] = await pool.query(
@@ -120,20 +153,33 @@ router.get('/supply-access/supplies', async (req, res) => {
           s.descripcion,
           ts.descripcion AS tipo,
           es.descripcion AS estado,
-          COALESCE(
-            (
-              SELECT cv.nombre_proveedor
-              FROM v_catalogo_disponible cv
-              WHERE cv.id_suministro = s.id_suministro
-              ORDER BY cv.precio_vigente ASC, cv.id_proveedor ASC
-              LIMIT 1
-            ),
-            'Sin proveedor'
-          ) AS proveedor
-        FROM suministros s
+          COALESCE(cv.nombre_proveedor, 'Sin proveedor') AS proveedor,
+          dpr.id_proveedor,
+          COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor_principal
+        FROM departamentos d
+        LEFT JOIN (
+          SELECT id_departamento, id_proveedor
+          FROM departamento_proveedores_rotacion
+          WHERE orden_rotacion = 1
+        ) dpr ON dpr.id_departamento = d.id_departamento
+        LEFT JOIN proveedores pr ON pr.id_proveedor = dpr.id_proveedor
+        INNER JOIN v_catalogo_disponible cv
+          ON dpr.id_proveedor IS NOT NULL
+         AND cv.id_proveedor = dpr.id_proveedor
+        INNER JOIN suministros s ON s.id_suministro = cv.id_suministro
         INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
         INNER JOIN estado_suministros es ON es.id_estado_suministro = s.id_estado_suministro
-        ORDER BY ts.descripcion ASC, s.descripcion ASC`
+        WHERE d.id_departamento = ?
+        GROUP BY
+          s.id_suministro,
+          s.descripcion,
+          ts.descripcion,
+          es.descripcion,
+          cv.nombre_proveedor,
+          dpr.id_proveedor,
+          pr.nombre_proveedor
+        ORDER BY ts.descripcion ASC, s.descripcion ASC`,
+        [scopeId]
       )
 
       return res.json(rows)
@@ -172,6 +218,136 @@ router.get('/supply-access/assignments', async (req, res) => {
   } catch (err) {
     console.error('Error obteniendo asignaciones de suministros:', err.message)
     return res.status(500).json({ error: 'Error al obtener asignaciones de suministros.' })
+  }
+})
+
+router.get('/supply-access/export', async (req, res) => {
+  const region = String(req.query.region || '').trim()
+
+  try {
+    const params = []
+    const whereClause = region ? 'WHERE COALESCE(r.descripcion, \"Sin región\") = ?' : ''
+
+    if (region) {
+      params.push(region)
+    }
+
+    const [pdvs] = await pool.query(
+      `SELECT
+        p.id_pdv,
+        p.codigo_centro_costo,
+        COALESCE(z.zona, 'Sin zona') AS zona,
+        COALESCE(r.descripcion, 'Sin región') AS region,
+        COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor_principal
+      FROM pdvs p
+      INNER JOIN zonas_comerciales z ON z.id_zona_comercial = p.id_zona_comercial
+      LEFT JOIN ciudades c ON c.id_ciudad = p.id_ciudad
+      LEFT JOIN regiones r ON r.id_region = c.id_region
+      LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
+      ${whereClause}
+      ORDER BY p.codigo_centro_costo ASC`,
+      params
+    )
+
+    const workbook = new ExcelJS.Workbook()
+    workbook.creator = 'Sistema de Suministros FarmCorp'
+    workbook.created = new Date()
+
+    const usedSheetNames = new Set()
+
+    for (const pdv of pdvs) {
+      const [assignedSupplies] = await pool.query(
+        `SELECT
+          ps.id_suministro,
+          s.descripcion AS suministro,
+          ts.descripcion AS tipo,
+          COALESCE(MAX(cv.nombre_proveedor), MAX(pr.nombre_proveedor), 'Sin proveedor') AS proveedor,
+          MIN(cv.precio_vigente) AS precio
+        FROM pdv_suministros ps
+        INNER JOIN pdvs p ON p.id_pdv = ps.id_pdv
+        INNER JOIN suministros s ON s.id_suministro = ps.id_suministro
+        INNER JOIN tipo_suministros ts ON ts.id_tipo_suministro = s.id_tipo_suministro
+        LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
+        LEFT JOIN v_catalogo_disponible cv
+          ON cv.id_suministro = ps.id_suministro
+         AND cv.id_proveedor = p.id_proveedor_principal
+        WHERE ps.id_pdv = ?
+        GROUP BY ps.id_suministro, s.descripcion, ts.descripcion
+        ORDER BY ts.descripcion ASC, s.descripcion ASC`,
+        [pdv.id_pdv]
+      )
+
+      const sheetName = buildUniqueSheetName(`${pdv.codigo_centro_costo} - ${pdv.zona}`, usedSheetNames)
+      const worksheet = workbook.addWorksheet(sheetName)
+
+      worksheet.getCell('A1').value = 'PDV'
+      worksheet.getCell('B1').value = pdv.codigo_centro_costo
+      worksheet.getCell('A2').value = 'Zona Comercial'
+      worksheet.getCell('B2').value = pdv.zona
+      worksheet.getCell('A3').value = 'Región'
+      worksheet.getCell('B3').value = pdv.region
+      worksheet.getCell('A4').value = 'Proveedor Principal'
+      worksheet.getCell('B4').value = pdv.proveedor_principal
+
+      ;['A1', 'A2', 'A3', 'A4'].forEach((cellRef) => {
+        const cell = worksheet.getCell(cellRef)
+        cell.font = { bold: true, color: { argb: 'FF1F2937' } }
+      })
+
+      worksheet.columns = [
+        { key: 'suministro', width: 42 },
+        { key: 'tipo', width: 24 },
+        { key: 'proveedor', width: 30 },
+        { key: 'precio', width: 16 },
+      ]
+
+      worksheet.getRow(6).values = ['Suministro Asignado', 'Tipo', 'Proveedor', 'Precio']
+      worksheet.getRow(6).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+      worksheet.getRow(6).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2C2F88' },
+      }
+      worksheet.getRow(6).alignment = { vertical: 'middle', horizontal: 'left' }
+
+      if (assignedSupplies.length === 0) {
+        worksheet.getCell('A7').value = 'Sin suministros asignados para este PDV.'
+        worksheet.mergeCells('A7:D7')
+        worksheet.getCell('A7').font = { italic: true, color: { argb: 'FF6B7280' } }
+      } else {
+        assignedSupplies.forEach((row) => {
+          const insertedRow = worksheet.addRow({
+            suministro: row.suministro,
+            tipo: row.tipo,
+            proveedor: row.proveedor,
+            precio: row.precio,
+          })
+
+          insertedRow.getCell('precio').numFmt = '#,##0.00'
+        })
+      }
+
+      worksheet.views = [{ state: 'frozen', ySplit: 6 }]
+    }
+
+    if (pdvs.length === 0) {
+      const worksheet = workbook.addWorksheet('Sin resultados')
+      worksheet.getCell('A1').value = 'No existen PDVs para los filtros seleccionados.'
+      worksheet.getCell('A1').font = { bold: true }
+    }
+
+    const fileDate = new Date().toISOString().slice(0, 10)
+    const regionSuffix = region ? `_${region.replace(/\s+/g, '_')}` : '_todas'
+    const fileName = `permisos_suministros_pdv${regionSuffix}_${fileDate}.xlsx`
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+
+    await workbook.xlsx.write(res)
+    return res.end()
+  } catch (err) {
+    console.error('Error exportando permisos de suministros a Excel:', err.message)
+    return res.status(500).json({ error: 'No se pudo generar el archivo Excel.' })
   }
 })
 

@@ -1,15 +1,16 @@
 // Endpoint principal: registrar pedido, validar datos contra BD,
 // generar CSV y enviar email
 
-const express    = require('express')
-const router     = express.Router()
-const path       = require('path')
-const fs         = require('fs')
-const { pool }   = require('../config/db')
+const express = require('express')
+const router = express.Router()
+const path = require('path')
+const fs = require('fs')
+const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
 const { createObjectCsvWriter } = require('csv-writer')
 const nodemailer = require('nodemailer')
 const PedidoRepository = require('../repositories/PedidoRepository')
+const { ensureCurrentDepartmentBudgets, ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
 
 const pedidoRepository = new PedidoRepository()
 const outsideOrderWindowLogPath = path.resolve(__dirname, '../../../temp_files/outside-order-window.log')
@@ -30,9 +31,9 @@ async function logOutsideOrderWindowAttempt({ req, pdv, orderWindow, items }) {
     windowEndDay: orderWindow?.dia_fin || null,
     attemptedItems: Array.isArray(items)
       ? items.map((item) => ({
-          suministroId: item?.suministroId || null,
-          cantidad: item?.cantidad || null,
-        }))
+        suministroId: item?.suministroId || null,
+        cantidad: item?.cantidad || null,
+      }))
       : [],
   }
 
@@ -47,8 +48,8 @@ async function logOutsideOrderWindowAttempt({ req, pdv, orderWindow, items }) {
 }
 
 const transporter = nodemailer.createTransport({
-  host:   process.env.MAIL_HOST,
-  port:   Number(process.env.MAIL_PORT),
+  host: process.env.MAIL_HOST,
+  port: Number(process.env.MAIL_PORT),
   secure: process.env.MAIL_SECURE === 'true',
   auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
 })
@@ -67,10 +68,13 @@ router.post('/', requireAuth, async (req, res) => {
   }
 
   const fecha = new Date().toISOString().split('T')[0]
-  const conn  = await pool.getConnection()
+  const conn = await pool.getConnection()
 
   try {
     await conn.beginTransaction()
+
+    await ensureCurrentDepartmentBudgets(conn)
+    await ensureCurrentPdvBudgets(conn)
 
     // Compatibilidad de esquema: algunas BD antiguas no tienen estas estructuras.
     const [[rotacionTableInfo]] = await conn.query(
@@ -90,21 +94,66 @@ router.post('/', requireAuth, async (req, res) => {
     )
     const hasDetalleProveedorColumn = Number(detalleProveedorColumnInfo?.total || 0) > 0
 
+    const [[departmentWindowColumnsInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'departamentos'
+         AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')`
+    )
+    const hasDepartmentWindowColumns = Number(departmentWindowColumnsInfo?.total || 0) === 2
+
+    // Verificar si pdvs.cupo_disponible existe (seguimiento por PDV)
+    const [[pdvCupoColInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'pdvs'
+         AND COLUMN_NAME = 'cupo_disponible'`
+    )
+    const hasPdvCupoDisponible = Number(pdvCupoColInfo?.total || 0) > 0
+
+    // Verificar si presupuesto_departamentos.monto_ejecutado existe
+    const [[montoEjColInfo]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'presupuesto_departamentos'
+         AND COLUMN_NAME = 'monto_ejecutado'`
+    )
+    const hasMontoEjecutado = Number(montoEjColInfo?.total || 0) > 0
+
     // ── 2. Contexto del usuario (departamento y presupuesto) ───────────────
+    // Buscar el registro de presupuesto del periodo actual (mes > anual > cualquiera)
+    const anioActual = new Date().getFullYear()
+    const mesActual  = new Date().getMonth() + 1
+
+    const deptBudgetSelect = hasMontoEjecutado
+      ? 'COALESCE(pd.monto_autorizado, 0) AS monto_autorizado, COALESCE(pd.monto_ejecutado, 0) AS monto_ejecutado'
+      : 'COALESCE(pd.monto_autorizado, 0) AS monto_autorizado, 0 AS monto_ejecutado'
+
     const [deptRows] = await conn.query(
       `SELECT
         LOWER(TRIM(d.descripcion)) AS departmentName,
-        COALESCE(pd.monto_autorizado, 0) AS departmentBudget
+        pd.id_presupuesto_departamento,
+        ${deptBudgetSelect}
        FROM departamentos d
-       LEFT JOIN presupuesto_departamentos pd ON pd.id_departamento = d.id_departamento
+       LEFT JOIN presupuesto_departamentos pd
+         ON pd.id_departamento = d.id_departamento
+        AND pd.periodo_anio = ?
+        AND pd.periodo_mes IN (?, 0)
        WHERE d.id_departamento = ?
+       ORDER BY pd.periodo_mes DESC
        LIMIT 1`,
-      [req.session.departamento]
+      [anioActual, mesActual, req.session.departamento]
     )
 
-    const departmentName = deptRows.length > 0 ? deptRows[0].departmentName : ''
-    const departmentBudget = deptRows.length > 0 ? Number(deptRows[0].departmentBudget || 0) : 0
-    const esComercial = departmentName === 'comercial'
+    const departmentName       = deptRows.length > 0 ? deptRows[0].departmentName : ''
+    const presupuestoId        = deptRows.length > 0 ? deptRows[0].id_presupuesto_departamento : null
+    const montoAutorizado      = deptRows.length > 0 ? Number(deptRows[0].monto_autorizado || 0) : 0
+    const montoEjecutado       = deptRows.length > 0 ? Number(deptRows[0].monto_ejecutado  || 0) : 0
+    const departmentBudget     = montoAutorizado - montoEjecutado          // saldo disponible
+    const esComercial          = departmentName === 'comercial'
 
     if (esComercial && !pdvId) {
       await conn.rollback()
@@ -114,8 +163,12 @@ router.post('/', requireAuth, async (req, res) => {
 
     let pdv = null
     let proveedorDepartamento = null
-    
+
     if (esComercial) {
+      const pdvCupoExpr = hasPdvCupoDisponible
+        ? 'COALESCE(p.cupo_disponible, gp.monto_autorizado) AS cupo, gp.monto_autorizado AS cupoGrupo'
+        : 'gp.monto_autorizado AS cupo, gp.monto_autorizado AS cupoGrupo'
+
       const [pdvRows] = await conn.query(
         `SELECT p.id_pdv, p.codigo_centro_costo AS descripcion, p.direccion,
                 p.id_proveedor_principal,
@@ -123,7 +176,7 @@ router.post('/', requireAuth, async (req, res) => {
           z.codigo_zona,
           c.descripcion AS ciudad,
           r.descripcion AS region,
-                gp.monto_autorizado AS cupo
+                ${pdvCupoExpr}
          FROM pdvs p
          INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
          LEFT JOIN ciudades c ON p.id_ciudad = c.id_ciudad
@@ -164,9 +217,40 @@ router.post('/', requireAuth, async (req, res) => {
         })
       }
     } else if (hasDepartamentoProveedorRotacion) {
-      // Para departamentos NO comerciales, calcular proveedor según rotación automática
+      // Para departamentos NO comerciales, primero validar su ventana de pedidos configurada.
+      const hoy = new Date()
+      const diaDelMes = hoy.getDate()
+
+      let departmentWindowStart = 1
+      let departmentWindowEnd = 3
+
+      if (hasDepartmentWindowColumns) {
+        const [departmentWindowRows] = await conn.query(
+          `SELECT COALESCE(dias_inicio_ventana, 1) AS dia_inicio,
+                COALESCE(dias_fin_ventana, 3) AS dia_fin
+         FROM departamentos
+         WHERE id_departamento = ?
+         LIMIT 1`,
+          [req.session.departamento]
+        )
+
+        if (departmentWindowRows.length > 0) {
+          departmentWindowStart = Number(departmentWindowRows[0].dia_inicio || 1)
+          departmentWindowEnd = Number(departmentWindowRows[0].dia_fin || 3)
+        }
+      }
+
+      if (diaDelMes < departmentWindowStart || diaDelMes > departmentWindowEnd) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+          error: `Los departamentos solo pueden hacer pedidos del ${departmentWindowStart} al ${departmentWindowEnd} de cada mes.`,
+        })
+      }
+
+      // Luego calcular proveedor según rotación automática
       const mesActual = new Date().getMonth() + 1
-      
+
       const [provRows] = await conn.query(
         `SELECT dpr.id_proveedor
          FROM departamento_proveedores_rotacion dpr
@@ -179,7 +263,7 @@ router.post('/', requireAuth, async (req, res) => {
          LIMIT 1`,
         [req.session.departamento, mesActual, req.session.departamento]
       )
-      
+
       if (provRows.length > 0) {
         proveedorDepartamento = provRows[0].id_proveedor
       }
@@ -227,7 +311,7 @@ router.post('/', requireAuth, async (req, res) => {
           error: `No tienes permiso para solicitar el suministro ID ${item.suministroId} en este contexto.`,
         })
       }
-      
+
       const [sumRows] = await conn.query(
         `SELECT 
           s.id_suministro, 
@@ -291,14 +375,14 @@ router.post('/', requireAuth, async (req, res) => {
 
       // Recalcular precio y total desde BD — ignoramos lo que mandó el frontend
       itemsValidados.push({
-        suministroId:     suministro.id_suministro,
-        proveedorId:      suministro.proveedorId,
+        suministroId: suministro.id_suministro,
+        proveedorId: suministro.proveedorId,
         suministroNombre: suministro.descripcion,
-        tipoId:           suministro.tipoId,
-        tipoNombre:       suministro.tipoNombre,
-        cantidad:         Number(item.cantidad),
-        precioUnitario:   Number(suministro.precio),
-        total:            Number(item.cantidad) * Number(suministro.precio),
+        tipoId: suministro.tipoId,
+        tipoNombre: suministro.tipoNombre,
+        cantidad: Number(item.cantidad),
+        precioUnitario: Number(suministro.precio),
+        total: Number(item.cantidad) * Number(suministro.precio),
       })
     }
 
@@ -306,19 +390,36 @@ router.post('/', requireAuth, async (req, res) => {
     const totalPedido = itemsValidados.reduce((s, i) => s + i.total, 0)
 
     if (esComercial) {
-      if (totalPedido > Number(pdv.cupo)) {
+      const cupoDisponible = Number(pdv.cupo)
+      if (cupoDisponible <= 0) {
         await conn.rollback()
         conn.release()
         return res.status(400).json({
-          error: `El total $${totalPedido.toFixed(2)} supera el cupo asignado $${Number(pdv.cupo).toFixed(2)}.`
+          error: `Este PDV ha agotado su cupo ($${Number(pdv.cupoGrupo).toFixed(2)}). Espera el reinicio de cupos.`
         })
       }
-    } else if (totalPedido > departmentBudget) {
-      await conn.rollback()
-      conn.release()
-      return res.status(400).json({
-        error: `El total $${totalPedido.toFixed(2)} supera el presupuesto del departamento $${departmentBudget.toFixed(2)}.`
-      })
+      if (totalPedido > cupoDisponible) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+          error: `El total $${totalPedido.toFixed(2)} supera el cupo disponible $${cupoDisponible.toFixed(2)} (cupo del grupo: $${Number(pdv.cupoGrupo).toFixed(2)}).`
+        })
+      }
+    } else {
+      if (departmentBudget <= 0 && montoAutorizado > 0) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+          error: `El departamento ha agotado su presupuesto ($${montoAutorizado.toFixed(2)}). Espera el reinicio del presupuesto.`
+        })
+      }
+      if (totalPedido > departmentBudget) {
+        await conn.rollback()
+        conn.release()
+        return res.status(400).json({
+          error: `El total $${totalPedido.toFixed(2)} supera el presupuesto disponible $${departmentBudget.toFixed(2)}.`
+        })
+      }
     }
 
     // ── 6. Obtener o crear usuario (Upsert) ────────────────────────────────
@@ -332,7 +433,7 @@ router.post('/', requireAuth, async (req, res) => {
       const [ins] = await conn.query(
         'INSERT INTO usuarios (id_departamento, id_rol, login, nombres, email) VALUES (?, 1, ?, ?, ?)',
         [req.session.departamento, req.session.userlogin, req.session.username,
-         `${req.session.userlogin}@farmcorp.com.ec`]
+        `${req.session.userlogin}@farmcorp.com.ec`]
       )
       usuarioId = ins.insertId
     } else {
@@ -366,11 +467,24 @@ router.post('/', requireAuth, async (req, res) => {
       }
     }
 
+    // ── 8b. Descontar cupo/presupuesto ────────────────────────────────────
+    if (esComercial && hasPdvCupoDisponible) {
+      await conn.query(
+        'UPDATE pdvs SET cupo_disponible = GREATEST(0, COALESCE(cupo_disponible, ?) - ?) WHERE id_pdv = ?',
+        [Number(pdv.cupoGrupo), totalPedido, pdvId]
+      )
+    } else if (!esComercial && hasMontoEjecutado && presupuestoId) {
+      await conn.query(
+        'UPDATE presupuesto_departamentos SET monto_ejecutado = monto_ejecutado + ? WHERE id_presupuesto_departamento = ?',
+        [totalPedido, presupuestoId]
+      )
+    }
+
     await conn.commit()
     conn.release()
 
     // ── 9. Calcular subtotales ─────────────────────────────────────────────
-    const subtotalOficina  = itemsValidados.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
+    const subtotalOficina = itemsValidados.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
     const subtotalLimpieza = itemsValidados.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
 
     // ── 10. Generar CSV ────────────────────────────────────────────────────
@@ -378,7 +492,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (!fs.existsSync(filesPath)) fs.mkdirSync(filesPath, { recursive: true })
 
     const nombreArchivo = `pedidoSuministro_${req.session.userlogin}_${fecha}`
-    const csvPath       = path.join(filesPath, `${nombreArchivo}.csv`)
+    const csvPath = path.join(filesPath, `${nombreArchivo}.csv`)
 
     const lugarSolicitud = esComercial
       ? (pdv?.descripcion || req.session.userlogin)
@@ -400,21 +514,21 @@ router.post('/', requireAuth, async (req, res) => {
     const csvWriter = createObjectCsvWriter({
       path: csvPath,
       header: [
-        { id: 'descripcion',    title: 'Descripcion' },
-        { id: 'tipo',           title: 'Tipo de Suministro' },
-        { id: 'cantidad',       title: 'Cantidad' },
+        { id: 'descripcion', title: 'Descripcion' },
+        { id: 'tipo', title: 'Tipo de Suministro' },
+        { id: 'cantidad', title: 'Cantidad' },
         { id: 'precioUnitario', title: 'Precio Unitario' },
-        { id: 'total',          title: 'Total' },
+        { id: 'total', title: 'Total' },
       ],
     })
 
     fs.writeFileSync(csvPath, headerLines)
     await csvWriter.writeRecords(itemsValidados.map(i => ({
-      descripcion:    i.suministroNombre,
-      tipo:           i.tipoNombre,
-      cantidad:       i.cantidad,
+      descripcion: i.suministroNombre,
+      tipo: i.tipoNombre,
+      cantidad: i.cantidad,
       precioUnitario: i.precioUnitario,
-      total:          i.total.toFixed(2),
+      total: i.total.toFixed(2),
     })))
 
     fs.appendFileSync(csvPath, [
@@ -429,13 +543,15 @@ router.post('/', requireAuth, async (req, res) => {
     let emailEnviado = false
 
     if (process.env.MAIL_ENABLED === 'true') {
+      console.log('📧 MAIL_ENABLED=true — intentando enviar correo a:', process.env.MAIL_TO)
+      console.log('   CSV path:', csvPath, '| existe:', fs.existsSync(csvPath))
       try {
-        await transporter.sendMail({
-          from:    `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_USER}>`,
+        const info = await transporter.sendMail({
+          from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_USER}>`,
           replyTo: process.env.MAIL_REPLY_TO,
-          to:      process.env.MAIL_TO,
+          to: process.env.MAIL_TO,
           subject: 'Pedido de Suministro',
-          html:    `<font face="verdana" size="3">
+          html: `<font face="verdana" size="3">
                       Hola,<br><br>
                       Tienes un nuevo pedido de suministro por atender.<br><br>
                       Se adjunta la solicitud en formato CSV.<br><br>
@@ -444,8 +560,13 @@ router.post('/', requireAuth, async (req, res) => {
           attachments: [{ filename: `${nombreArchivo}.csv`, path: csvPath }],
         })
         emailEnviado = true
+        console.log('✅ Email aceptado! MessageID:', info.messageId, '| Respuesta:', info.response)
       } catch (mailErr) {
-        console.error('Error enviando email:', mailErr.message)
+        console.error('❌ Error enviando email:')
+        console.error('   Código    :', mailErr.code)
+        console.error('   Respuesta :', mailErr.responseCode)
+        console.error('   Mensaje   :', mailErr.message)
+        console.error('   Detalle   :', mailErr.response)
       } finally {
         if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath)
       }
@@ -478,44 +599,44 @@ router.post('/', requireAuth, async (req, res) => {
 router.get('/aprobaciones', requireAuth, async (req, res) => {
   try {
     console.log('GET /api/pedidos/aprobaciones - Query params:', req.query)
-    
+
     const { search, departamento, estado, fechaDesde, fechaHasta, page = 1, limit = 10 } = req.query
     const offset = (Number(page) - 1) * Number(limit)
-    
+
     const conditions = []
     const paramsCount = []
-    
+
     // Filtro de búsqueda por ID o nombre de usuario
     if (search) {
       conditions.push('(cp.id_pedido = ? OR u.nombres LIKE ? OR u.login LIKE ?)')
       paramsCount.push(search, `%${search}%`, `%${search}%`)
     }
-    
+
     // Filtro por departamento
     if (departamento) {
       conditions.push('d.id_departamento = ?')
       paramsCount.push(departamento)
     }
-    
+
     // Filtro por estado
     if (estado) {
       conditions.push('cp.id_estado_pedido = ?')
       paramsCount.push(estado)
     }
-    
+
     // Filtro por rango de fechas
     if (fechaDesde) {
       conditions.push('DATE(cp.fecha_registro) >= ?')
       paramsCount.push(fechaDesde)
     }
-    
+
     if (fechaHasta) {
       conditions.push('DATE(cp.fecha_registro) <= ?')
       paramsCount.push(fechaHasta)
     }
-    
+
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
-    
+
     // Contar total de registros
     const countSQL = `
       SELECT COUNT(*) as total
@@ -526,10 +647,10 @@ router.get('/aprobaciones', requireAuth, async (req, res) => {
       ${whereClause}
     `
     const [[{ total }]] = await pool.query(countSQL, paramsCount)
-    
+
     // Crear parámetros para el SELECT (duplicar los filtros)
     const paramsData = [...paramsCount, Number(limit), offset]
-    
+
     // Obtener datos paginados
     const dataSQL = `
       SELECT 
@@ -553,7 +674,7 @@ router.get('/aprobaciones', requireAuth, async (req, res) => {
       LIMIT ? OFFSET ?
     `
     const [rows] = await pool.query(dataSQL, paramsData)
-    
+
     const response = {
       data: rows,
       total: Number(total),
@@ -574,7 +695,7 @@ router.get('/aprobaciones', requireAuth, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params
-    
+
     // Obtener cabecera del pedido
     const [cabRows] = await pool.query(
       `SELECT 
@@ -594,11 +715,11 @@ router.get('/:id', requireAuth, async (req, res) => {
       WHERE cp.id_pedido = ?`,
       [id]
     )
-    
+
     if (cabRows.length === 0) {
       return res.status(404).json({ error: 'Pedido no encontrado' })
     }
-    
+
     // Obtener items del pedido
     const [itemRows] = await pool.query(
       `SELECT 
@@ -617,9 +738,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       ORDER BY ts.descripcion, s.descripcion`,
       [id]
     )
-    
+
     const total = itemRows.reduce((sum, item) => sum + Number(item.subtotal), 0)
-    
+
     return res.json({
       ...cabRows[0],
       items: itemRows,
@@ -792,16 +913,16 @@ router.post('/:id/aprobar', requireAuth, async (req, res) => {
     const { id } = req.params
     const { items, observaciones } = req.body || {}
     const conn = await pool.getConnection()
-    
+
     try {
       await conn.beginTransaction()
-      
+
       // Verificar que el pedido existe y está pendiente
       const [[pedido]] = await conn.query(
         'SELECT id_estado_pedido FROM cabecera_pedidos WHERE id_pedido = ?',
         [id]
       )
-      
+
       if (!pedido) {
         await conn.rollback()
         conn.release()
@@ -872,7 +993,7 @@ router.post('/:id/aprobar', requireAuth, async (req, res) => {
           )
         }
       }
-      
+
       const observacionesLimpias = String(observaciones || '').trim()
 
       // Regla de negocio centralizada en SP: valida stock y cambia estado en transacción.
@@ -881,15 +1002,15 @@ router.post('/:id/aprobar', requireAuth, async (req, res) => {
         Number(req.session.userId),
         observacionesLimpias || null,
       ])
-      
+
       await conn.commit()
       conn.release()
-      
-      return res.json({ 
-        success: true, 
-        message: `Pedido #${id} aprobado correctamente` 
+
+      return res.json({
+        success: true,
+        message: `Pedido #${id} aprobado correctamente`
       })
-      
+
     } catch (error) {
       await conn.rollback()
       conn.release()
@@ -909,42 +1030,93 @@ router.post('/:id/rechazar', requireAuth, async (req, res) => {
   try {
     const { id } = req.params
     const { motivo } = req.body
-    
+
     if (!motivo || !motivo.trim()) {
       return res.status(400).json({ error: 'El motivo de rechazo es requerido' })
     }
-    
+
     const conn = await pool.getConnection()
-    
+
     try {
       await conn.beginTransaction()
-      
-      // Verificar que el pedido existe
+
+      // Verificar que el pedido existe y obtener datos para restauración
       const [[pedido]] = await conn.query(
-        'SELECT id_estado_pedido FROM cabecera_pedidos WHERE id_pedido = ?',
+        `SELECT cp.id_estado_pedido, cp.id_pdv, u.id_departamento,
+                COALESCE((
+                  SELECT SUM(dp.cantidad * dp.precio_unitario)
+                  FROM detalle_pedidos dp WHERE dp.id_pedido = cp.id_pedido
+                ), 0) AS total_pedido
+         FROM cabecera_pedidos cp
+         JOIN usuarios u ON u.id_usuario = cp.id_usuario
+         WHERE cp.id_pedido = ?`,
         [id]
       )
-      
+
       if (!pedido) {
         await conn.rollback()
         conn.release()
         return res.status(404).json({ error: 'Pedido no encontrado' })
       }
-      
+
+      // Solo restaurar cupos si el pedido estaba pendiente (estado 1 = En espera)
+      const estabaPendiente = Number(pedido.id_estado_pedido) === 1
+      const totalPedido     = Number(pedido.total_pedido || 0)
+
+      if (estabaPendiente && totalPedido > 0) {
+        // Revisar si las columnas de tracking existen
+        const [[pdvColInfo]] = await conn.query(
+          `SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pdvs' AND COLUMN_NAME = 'cupo_disponible'`
+        )
+        const hasPdvCupo = Number(pdvColInfo?.total || 0) > 0
+
+        const [[montoEjColInfo]] = await conn.query(
+          `SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'presupuesto_departamentos' AND COLUMN_NAME = 'monto_ejecutado'`
+        )
+        const hasMontoEj = Number(montoEjColInfo?.total || 0) > 0
+
+        if (pedido.id_pdv && hasPdvCupo) {
+          // Restaurar cupo del PDV sin superar el cupo del grupo
+          await conn.query(
+            `UPDATE pdvs p
+             JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
+             SET p.cupo_disponible = LEAST(gp.monto_autorizado, COALESCE(p.cupo_disponible, 0) + ?)
+             WHERE p.id_pdv = ?`,
+            [totalPedido, pedido.id_pdv]
+          )
+        } else if (!pedido.id_pdv && hasMontoEj && pedido.id_departamento) {
+          // Restaurar presupuesto del departamento (periodo actual)
+          const anio = new Date().getFullYear()
+          const mes  = new Date().getMonth() + 1
+          await conn.query(
+            `UPDATE presupuesto_departamentos
+             SET monto_ejecutado = GREATEST(0, monto_ejecutado - ?)
+             WHERE id_departamento = ?
+               AND periodo_anio = ?
+               AND periodo_mes IN (?, 0)
+             ORDER BY periodo_mes DESC
+             LIMIT 1`,
+            [totalPedido, pedido.id_departamento, anio, mes]
+          )
+        }
+      }
+
       // Obtener el ID del estado rechazado (soporta variantes)
       const [[estadoRechazado]] = await conn.query(
         "SELECT id_estado_pedido FROM estado_pedidos WHERE LOWER(descripcion) LIKE 'rechaz%' LIMIT 1"
       )
-      
+
       if (!estadoRechazado) {
         await conn.rollback()
         conn.release()
         return res.status(500).json({ error: 'Estado "Rechazado" no encontrado en la BD' })
       }
-      
+
       // Actualizar estado del pedido y guardar el motivo de rechazo
       const motivoLimpio = String(motivo || '').trim()
-      
+
       // Verificar si existe la columna motivo_rechazo
       const [motivoColumnRows] = await conn.query(
         `SELECT COUNT(*) AS total
@@ -970,15 +1142,15 @@ router.post('/:id/rechazar', requireAuth, async (req, res) => {
           [estadoRechazado.id_estado_pedido, id]
         )
       }
-      
+
       await conn.commit()
       conn.release()
-      
-      return res.json({ 
-        success: true, 
-        message: `Pedido #${id} rechazado correctamente` 
+
+      return res.json({
+        success: true,
+        message: `Pedido #${id} rechazado correctamente`
       })
-      
+
     } catch (error) {
       await conn.rollback()
       conn.release()

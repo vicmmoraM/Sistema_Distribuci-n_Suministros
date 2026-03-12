@@ -3,9 +3,11 @@ export default function DepartmentModal({
   mode,
   form,
   providers,
+  gruposPresupuesto,
   onClose,
   onSubmit,
   onChange,
+  onBudgetChange,
   XIcon,
   CheckIcon,
 }) {
@@ -40,14 +42,17 @@ export default function DepartmentModal({
               </option>
             ))}
           </select>
-          <input
-            type="number"
-            placeholder="Presupuesto autorizado"
-            value={form.presupuesto_autorizado}
-            onChange={(e) => onChange('presupuesto_autorizado', e.target.value)}
-            step="0.01"
-            min="0"
-          />
+          {(gruposPresupuesto || []).map((grupo) => (
+            <input
+              key={grupo.id_grupo_presupuesto}
+              type="number"
+              placeholder={`Presupuesto ${grupo.descripcion}`}
+              value={form.presupuestos?.[grupo.id_grupo_presupuesto] ?? ''}
+              onChange={(e) => onBudgetChange(grupo.id_grupo_presupuesto, e.target.value)}
+              step="0.01"
+              min="0"
+            />
+          ))}
           <div className="admin-modal-actions">
             <button type="button" className="admin-secondary icon-btn-with-text" onClick={onClose}>
               <XIcon /> <span>Cancelar</span>

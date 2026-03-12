@@ -212,9 +212,15 @@ export default function PdvModal({
             <label className="admin-modal-label">Grupo PDV (Monto Autorizado)</label>
             <select
               value={String(form.id_grupo_pdv || '')}
-              onChange={(e) => onChange('id_grupo_pdv', e.target.value)}
+              onChange={(e) => {
+                onChange('id_grupo_pdv', e.target.value)
+                if (e.target.value !== '__new__') {
+                  onChange('newGroupName', '')
+                  onChange('newGroupMonto', '')
+                }
+              }}
               className="admin-modal-select"
-              required
+              required={form.id_grupo_pdv !== '__new__'}
             >
               <option value="">Selecciona un grupo</option>
               {groups.map((group) => (
@@ -222,7 +228,32 @@ export default function PdvModal({
                   {group.descripcion} - ${Number(group.monto_autorizado).toFixed(2)}
                 </option>
               ))}
+              <option value="__new__">+ Crear nuevo grupo...</option>
             </select>
+            {form.id_grupo_pdv === '__new__' && (
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                <input
+                  type="text"
+                  value={form.newGroupName || ''}
+                  onChange={(e) => onChange('newGroupName', e.target.value)}
+                  className="admin-modal-select"
+                  placeholder="Nombre del grupo (ej: GRANDE PLUS)"
+                  required
+                  style={{ flex: 2 }}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.newGroupMonto || ''}
+                  onChange={(e) => onChange('newGroupMonto', e.target.value)}
+                  className="admin-modal-select"
+                  placeholder="Monto (ej: 30.00)"
+                  required
+                  style={{ flex: 1 }}
+                />
+              </div>
+            )}
             <p className="admin-modal-hint">El monto autorizado determina el limite de pedidos</p>
           </div>
 
@@ -230,7 +261,12 @@ export default function PdvModal({
             <label className="admin-modal-label">Proveedor Principal</label>
             <select
               value={String(form.id_proveedor_principal || '')}
-              onChange={(e) => onChange('id_proveedor_principal', e.target.value)}
+              onChange={(e) => {
+                onChange('id_proveedor_principal', e.target.value)
+                if (e.target.value !== '__new__') {
+                  onChange('newProviderName', '')
+                }
+              }}
               className="admin-modal-select"
             >
               <option value="">Sin proveedor asignado</option>
@@ -239,7 +275,19 @@ export default function PdvModal({
                   {provider.nombre_proveedor}
                 </option>
               ))}
+              <option value="__new__">+ Crear nuevo proveedor...</option>
             </select>
+            {form.id_proveedor_principal === '__new__' && (
+              <input
+                type="text"
+                value={form.newProviderName || ''}
+                onChange={(e) => onChange('newProviderName', e.target.value)}
+                className="admin-modal-select"
+                placeholder="Nombre del proveedor (ej: Insumos García)"
+                required
+                style={{ marginTop: '6px' }}
+              />
+            )}
             <p className="admin-modal-hint">El proveedor principal sera el preferido para este PDV</p>
           </div>
 

@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth')
 const bcrypt = require('bcrypt')
 const adminDepartamentosRoutes = require('./admin/departamentos')
 const adminSupplyAccessRoutes = require('./admin/supplyAccess')
+const { ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
 
 async function requireAdminAccess(req, res, next) {
   try {
@@ -70,8 +71,11 @@ router.get('/meta', async (req, res) => {
     const [regiones] = await pool.query(
       'SELECT id_region, descripcion FROM regiones ORDER BY descripcion ASC'
     )
+    const [gruposPresupuesto] = await pool.query(
+      'SELECT id_grupo_presupuesto, descripcion FROM grupos_presupuesto WHERE activo = 1 ORDER BY id_grupo_presupuesto ASC'
+    )
 
-    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, ciudades, gruposPdvs, estadosPdvs, supervisores, regiones })
+    return res.json({ departamentos, roles, categorias, estadosSuministro, proveedores, zonasComerciales, ciudades, gruposPdvs, estadosPdvs, supervisores, regiones, gruposPresupuesto })
   } catch (err) {
     console.error('Error cargando metadatos admin:', err.message)
     return res.status(500).json({ error: 'Error al cargar metadatos administrativos.' })
@@ -276,8 +280,8 @@ router.get('/supplies', async (req, res) => {
         s.id_tipo_suministro,
         ts.descripcion AS categoria,
         COALESCE(sps.stock, 0) AS stock,
-        COALESCE(sps.id_estado_suministro, s.id_estado_suministro) AS id_estado_suministro,
-        es.descripcion AS estado,
+        CASE WHEN COALESCE(sps.stock, 0) <= 0 THEN 2 ELSE 1 END AS id_estado_suministro,
+        CASE WHEN COALESCE(sps.stock, 0) <= 0 THEN 'No Disponible' ELSE 'Disponible' END AS estado,
         spv.id_suministro_precio,
         spv.id_proveedor,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor') AS proveedor,
@@ -292,8 +296,6 @@ router.get('/supplies', async (req, res) => {
       LEFT JOIN suministro_proveedor_stock sps
         ON sps.id_suministro = s.id_suministro
        AND sps.id_proveedor = spv.id_proveedor
-      LEFT JOIN estado_suministros es
-        ON es.id_estado_suministro = COALESCE(sps.id_estado_suministro, s.id_estado_suministro)
       ${whereClause}
       ORDER BY s.descripcion ASC, pr.nombre_proveedor ASC, spv.id_suministro_precio ASC`,
       params
@@ -310,8 +312,7 @@ router.post('/supplies', async (req, res) => {
   const {
     descripcion,
     id_tipo_suministro,
-    stock = 0,
-    id_estado_suministro = 1,
+    stock = 100,
     id_proveedor,
     precio_compra,
   } = req.body
@@ -328,11 +329,14 @@ router.post('/supplies', async (req, res) => {
     return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
+  // Estado se deriva automáticamente del stock: 0 = No Disponible (2), >0 = Disponible (1)
+  const estadoAutomatic = Number(stock) <= 0 ? 2 : 1
+
   try {
     const [result] = await pool.query(
       `INSERT INTO suministros (descripcion, id_tipo_suministro, id_estado_suministro)
        VALUES (?, ?, ?)`,
-      [descripcion, id_tipo_suministro, id_estado_suministro]
+      [descripcion, id_tipo_suministro, estadoAutomatic]
     )
 
     if (id_proveedor && precio_compra !== undefined) {
@@ -349,7 +353,7 @@ router.post('/supplies', async (req, res) => {
          ON DUPLICATE KEY UPDATE
            stock = VALUES(stock),
            id_estado_suministro = VALUES(id_estado_suministro)`,
-        [result.insertId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro || 1)]
+        [result.insertId, Number(id_proveedor), Number(stock), estadoAutomatic]
       )
     }
 
@@ -366,13 +370,12 @@ router.put('/supplies/:id', async (req, res) => {
     descripcion,
     id_tipo_suministro,
     stock,
-    id_estado_suministro,
     id_suministro_precio,
     id_proveedor,
     precio_compra,
   } = req.body
 
-    if (!descripcion || !id_tipo_suministro || stock === undefined || !id_estado_suministro) {
+  if (!descripcion || !id_tipo_suministro || stock === undefined) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios.' })
   }
 
@@ -384,12 +387,15 @@ router.put('/supplies/:id', async (req, res) => {
     return res.status(400).json({ error: 'El precio no puede ser negativo.' })
   }
 
+  // Estado se deriva automáticamente del stock: 0 = No Disponible (2), >0 = Disponible (1)
+  const estadoAutomatic = Number(stock) <= 0 ? 2 : 1
+
   try {
     await pool.query(
       `UPDATE suministros
-       SET descripcion = ?, id_tipo_suministro = ?
+       SET descripcion = ?, id_tipo_suministro = ?, id_estado_suministro = ?
        WHERE id_suministro = ?`,
-      [descripcion, id_tipo_suministro, supplyId]
+      [descripcion, id_tipo_suministro, estadoAutomatic, supplyId]
     )
 
     await pool.query('CALL sp_actualizar_precio(?, ?, ?, ?)', [
@@ -404,8 +410,8 @@ router.put('/supplies/:id', async (req, res) => {
        VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          stock = VALUES(stock),
-         id_estado_suministro = VALUES(id_estado_suministro)` ,
-      [supplyId, Number(id_proveedor), Number(stock || 0), Number(id_estado_suministro)]
+         id_estado_suministro = VALUES(id_estado_suministro)`,
+      [supplyId, Number(id_proveedor), Number(stock), estadoAutomatic]
     )
 
     return res.json({ message: 'Suministro actualizado correctamente.' })
@@ -502,6 +508,8 @@ router.get('/pdvs', async (req, res) => {
   const { search = '', region = '', zone = '', provider = '' } = req.query
 
   try {
+    await ensureCurrentPdvBudgets(pool)
+
     const params = []
     const conditions = []
 
@@ -546,7 +554,8 @@ router.get('/pdvs', async (req, res) => {
         ep.descripcion AS estado,
         gp.descripcion AS grupo,
         gp.monto_autorizado,
-        COALESCE(sv.nombres, 'Sin supervisor') AS supervisor
+          COALESCE(p.cupo_disponible, gp.monto_autorizado) AS cupo_disponible,
+          COALESCE(sv.nombres, 'Sin supervisor') AS supervisor
       FROM pdvs p
       LEFT JOIN proveedores pr ON pr.id_proveedor = p.id_proveedor_principal
       INNER JOIN zonas_comerciales zc ON zc.id_zona_comercial = p.id_zona_comercial
@@ -622,6 +631,52 @@ router.put('/pdvs/:id', async (req, res) => {
   } catch (err) {
     console.error('Error actualizando PDV:', err.message)
     return res.status(500).json({ error: 'Error al actualizar PDV.' })
+  }
+})
+
+// =====================================================
+// PROVEEDORES - Creación rápida
+// =====================================================
+
+router.post('/proveedores', async (req, res) => {
+  const { nombre_proveedor } = req.body
+  if (!nombre_proveedor || nombre_proveedor.trim() === '') {
+    return res.status(400).json({ error: 'El nombre del proveedor es obligatorio.' })
+  }
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO proveedores (nombre_proveedor) VALUES (?)',
+      [nombre_proveedor.trim()]
+    )
+    return res.status(201).json({ id_proveedor: result.insertId, nombre_proveedor: nombre_proveedor.trim() })
+  } catch (err) {
+    console.error('Error creando proveedor:', err.message)
+    return res.status(500).json({ error: 'Error al crear el proveedor.' })
+  }
+})
+
+// =====================================================
+// GRUPOS PDV - Creación rápida
+// =====================================================
+
+router.post('/grupos_pdvs', async (req, res) => {
+  const { descripcion, monto_autorizado } = req.body
+  if (!descripcion || descripcion.trim() === '') {
+    return res.status(400).json({ error: 'La descripción del grupo es obligatoria.' })
+  }
+  const monto = Number(monto_autorizado)
+  if (isNaN(monto) || monto < 0) {
+    return res.status(400).json({ error: 'El monto autorizado debe ser un número mayor o igual a 0.' })
+  }
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO grupo_pdvs (descripcion, monto_autorizado) VALUES (?, ?)',
+      [descripcion.trim().toUpperCase(), monto]
+    )
+    return res.status(201).json({ id_grupo_pdv: result.insertId, descripcion: descripcion.trim().toUpperCase(), monto_autorizado: monto })
+  } catch (err) {
+    console.error('Error creando grupo PDV:', err.message)
+    return res.status(500).json({ error: 'Error al crear el grupo PDV.' })
   }
 })
 

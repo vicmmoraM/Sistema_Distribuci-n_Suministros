@@ -4,6 +4,7 @@ const express = require('express');
 const router  = express.Router();
 const { pool } = require('../config/db');
 const { requireAuth } = require('../middleware/auth');
+const { ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService');
 
 /**
  * GET /api/catalogos/departamentos
@@ -26,6 +27,8 @@ router.get('/departamentos', async (req, res) => {
  */
 router.get('/pdvs', requireAuth, async (req, res) => {
   try {
+    await ensureCurrentPdvBudgets(pool)
+
     const [rows] = await pool.query(`
       SELECT 
         p.id_pdv,
@@ -34,7 +37,8 @@ router.get('/pdvs', requireAuth, async (req, res) => {
         c.descripcion AS ciudad,
         COALESCE(r.descripcion, 'Sin región') AS region,
         COALESCE(pr.nombre_proveedor, 'Sin proveedor asignado') AS proveedor,
-        gp.monto_autorizado AS cupo
+        gp.monto_autorizado AS cupo,
+        COALESCE(p.cupo_disponible, gp.monto_autorizado) AS cupo_disponible
       FROM pdvs p
       INNER JOIN zonas_comerciales z ON p.id_zona_comercial = z.id_zona_comercial
       LEFT JOIN ciudades c ON p.id_ciudad = c.id_ciudad
@@ -56,16 +60,37 @@ router.get('/pdvs', requireAuth, async (req, res) => {
  * Lista todos los tipos de suministro.
  */
 router.get('/tipo-suministros', requireAuth, async (req, res) => {
+  const { pdv } = req.query
+
   try {
+    const idPdv = pdv ? Number(pdv) : null
+    const idDepartamento = Number(req.session?.departamento || 0)
+
     const [rows] = await pool.query(`
       SELECT
-        MIN(ts.id_tipo_suministro) AS id_tipo_suministro,
-        ts.descripcion
+        ts.id_tipo_suministro,
+        ts.descripcion,
+        COALESCE(gts.id_grupo_presupuesto, 0) AS id_grupo_presupuesto
       FROM tipo_suministros ts
+      LEFT JOIN grupo_tipos_suministro gts ON gts.id_tipo_suministro = ts.id_tipo_suministro
       INNER JOIN suministros s ON s.id_tipo_suministro = ts.id_tipo_suministro
-      GROUP BY ts.descripcion
+      WHERE (
+        (? IS NOT NULL AND EXISTS (
+          SELECT 1
+          FROM v_suministros_efectivos_pdv vsp
+          WHERE vsp.id_pdv = ?
+            AND vsp.id_suministro = s.id_suministro
+        ))
+        OR
+        (? IS NULL AND EXISTS (
+          SELECT 1
+          FROM departamento_suministros ds
+          WHERE ds.id_departamento = ?
+            AND ds.id_suministro = s.id_suministro
+        ))
+      )
       ORDER BY ts.descripcion
-    `);
+    `, [idPdv, idPdv, idPdv, idDepartamento]);
     return res.json(rows);
   } catch (err) {
     console.error(err);

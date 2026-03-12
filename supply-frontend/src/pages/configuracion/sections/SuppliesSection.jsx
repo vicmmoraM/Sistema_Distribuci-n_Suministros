@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '../../../api/axios'
 import DepartmentsSection from './DepartmentsSection'
+import GestionConfiguracionSection from './GestionConfiguracionSection'
 import SupplyAccessSection from './SupplyAccessSection'
 
 const SUPPLIES_PAGE_SIZE = 10
@@ -34,8 +35,11 @@ export default function SuppliesSection({
   onPdvFilterChange,
   regionsMeta,
   zonesMeta,
+  statesMeta,
+  supervisoresMeta,
   pdvs,
   onEditPdv,
+  onResetPdvBudget,
   categories,
   categoryFilters,
   onCategoryFilterChange,
@@ -46,9 +50,12 @@ export default function SuppliesSection({
   onDepartmentFilterChange,
   onEditDepartment,
   onDeleteDepartment,
+  onResetDepartmentBudget,
+  gruposPresupuesto,
   onNotify,
   EditIcon,
   TrashIcon,
+  RefreshIcon,
   PlusIcon,
 }) {
   const [suppliesPage, setSuppliesPage] = useState(1)
@@ -192,6 +199,7 @@ export default function SuppliesSection({
     'supply-access': 'Configura qué suministros puede solicitar cada PDV o departamento',
     'categories': 'Administra las categorías y tipos de suministros',
     'departamentos': 'Gestión de departamentos de la organización',
+    'gestion-configuracion': 'Configura ventanas de pedido para departamentos y fechas de pedido de PDVs por región',
   }
 
   return (
@@ -433,6 +441,7 @@ export default function SuppliesSection({
                   <th>Zona Comercial</th>
                   <th>Ciudad</th>
                   <th>Monto Autorizado</th>
+                  <th>Disponible</th>
                   <th>Estado</th>
                   <th>Proveedor Principal</th>
                   <th>Acciones</th>
@@ -446,12 +455,14 @@ export default function SuppliesSection({
                     <td data-label="Zona">{item.zona_comercial}</td>
                     <td data-label='Ciudad'>{item.ciudad}</td>
                     <td data-label="Monto Autorizado">${Number(item.monto_autorizado || 0).toFixed(2)}</td>
+                    <td data-label="Disponible">${Number(item.cupo_disponible ?? item.monto_autorizado ?? 0).toFixed(2)}</td>
                     <td data-label="Estado">
                       <span className={getStatusClassName(item.estado)}>{item.estado}</span>
                     </td>
                     <td data-label="Proveedor">{item.proveedor}</td>
                     <td data-label="Acciones" className="actions-cell">
                       <button type="button" className="icon-btn" onClick={() => onEditPdv(item)} title="Editar PDV"><EditIcon /></button>
+                      <button type="button" className="icon-btn admin-reset-action" onClick={() => onResetPdvBudget(item)} title="Restablecer presupuesto del PDV"><RefreshIcon /></button>
                     </td>
                   </tr>
                 ))}
@@ -543,9 +554,18 @@ export default function SuppliesSection({
           onDepartmentFilterChange={onDepartmentFilterChange}
           onEditDepartment={onEditDepartment}
           onDeleteDepartment={onDeleteDepartment}
+          onResetDepartmentBudget={onResetDepartmentBudget}
+          gruposPresupuesto={gruposPresupuesto}
           providersMeta={providersMeta}
           EditIcon={EditIcon}
           TrashIcon={TrashIcon}
+          RefreshIcon={RefreshIcon}
+        />
+      )}
+
+      {suppliesActiveTab === 'gestion-configuracion' && (
+        <GestionConfiguracionSection
+          onNotify={onNotify}
         />
       )}
     </div>

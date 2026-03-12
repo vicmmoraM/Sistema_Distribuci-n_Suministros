@@ -12,6 +12,7 @@ export const EMPTY_USER = {
   departamento: 0,
   departmentName: null,
   departmentBudget: 0,
+  departmentBudgets: [],
   roleId: null,
   roleName: null,
   permissions: EMPTY_PERMISSIONS,

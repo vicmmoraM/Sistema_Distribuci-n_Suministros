@@ -4,6 +4,7 @@ const router = express.Router()
 const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
 const { requirePermission } = require('../middleware/requirePermission')
+const { ensureCurrentDepartmentBudgets, ensureCurrentPdvBudgets, getCurrentPeriod } = require('../services/BudgetPeriodService')
 
 router.use(requireAuth, requirePermission('CONFIGURACION'))
 
@@ -142,15 +143,15 @@ router.get('/pdvs/export/excel', async (req, res) => {
 		const filtersWorksheet = workbook.addWorksheet('Filtros aplicados')
 
 		worksheet.columns = [
-			{header: 'REGION', key: 'region', width: 20},
-            {header: 'CENTRO DE COSTO', key: 'pdv', width: 20},
-            {header: 'ZONA', key: 'zona_comercial', width: 22},
-		{header: 'CIUDAD', key: 'ciudad', width: 20},
-		{header: 'PROVEEDOR', key: 'proveedor', width: 30},
-		{header: 'SUPERVISOR', key: 'supervisor', width: 30},
-		{header: 'ESTADO', key: 'estado', width: 20},
-		{header: 'DIRECCION', key: 'direccion', width: 40},
-		{header: 'MONTOAUTORIZADO', key: 'monto_autorizado', width: 18}
+			{ header: 'REGION', key: 'region', width: 20 },
+			{ header: 'CENTRO DE COSTO', key: 'pdv', width: 20 },
+			{ header: 'ZONA', key: 'zona_comercial', width: 22 },
+			{ header: 'CIUDAD', key: 'ciudad', width: 20 },
+			{ header: 'PROVEEDOR', key: 'proveedor', width: 30 },
+			{ header: 'SUPERVISOR', key: 'supervisor', width: 30 },
+			{ header: 'ESTADO', key: 'estado', width: 20 },
+			{ header: 'DIRECCION', key: 'direccion', width: 40 },
+			{ header: 'MONTOAUTORIZADO', key: 'monto_autorizado', width: 18 }
 
 		]
 
@@ -314,6 +315,297 @@ router.get('/supplies/export/excel', async (req, res) => {
 	} catch (err) {
 		console.error('Error exportando Suministros a Excel:', err.message)
 		return res.status(500).json({ error: 'Error al exportar Suministros a Excel.' })
+	}
+})
+
+// ============================================================
+// NUEVA FUNCIONALIDAD: Gestión de Configuración de Departamentos y PDVs
+// ============================================================
+
+// GET: Obtener configuración de ventana de pedidos por departamento
+router.get('/departamentos/ventana-pedidos', async (req, res) => {
+	try {
+		const [[windowColumnsInfo]] = await pool.query(`
+			SELECT COUNT(*) AS total
+			FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'departamentos'
+			  AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')
+		`)
+		const hasDepartmentWindowColumns = Number(windowColumnsInfo?.total || 0) === 2
+
+		const [rows] = await pool.query(`
+			SELECT 
+				id_departamento,
+				descripcion,
+				${hasDepartmentWindowColumns ? 'dias_inicio_ventana' : '1 AS dias_inicio_ventana'},
+				${hasDepartmentWindowColumns ? 'dias_fin_ventana' : '3 AS dias_fin_ventana'}
+			FROM departamentos
+			ORDER BY descripcion ASC
+		`)
+		res.json(rows || [])
+	} catch (err) {
+		console.error('Error obteniendo ventana de pedidos:', err.message)
+		res.status(500).json({ error: 'Error al obtener configuración de ventana de pedidos' })
+	}
+})
+
+// PUT: Actualizar ventana de pedidos para todos los departamentos
+router.put('/departamentos/ventana-pedidos/actualizar-todos', async (req, res) => {
+	try {
+		const { dias_inicio_ventana, dias_fin_ventana } = req.body
+
+		const [[windowColumnsInfo]] = await pool.query(`
+			SELECT COUNT(*) AS total
+			FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'departamentos'
+			  AND COLUMN_NAME IN ('dias_inicio_ventana', 'dias_fin_ventana')
+		`)
+		const hasDepartmentWindowColumns = Number(windowColumnsInfo?.total || 0) === 2
+
+		if (!dias_inicio_ventana || !dias_fin_ventana || dias_inicio_ventana < 1 || dias_fin_ventana > 31 || dias_inicio_ventana > dias_fin_ventana) {
+			return res.status(400).json({ error: 'Valores inválidos para la ventana de pedidos' })
+		}
+
+		if (!hasDepartmentWindowColumns) {
+			return res.status(400).json({ error: 'La base de datos aún no tiene los campos de ventana para departamentos. Ejecuta la migración correspondiente.' })
+		}
+
+		await pool.query(`
+			UPDATE departamentos
+			SET 
+				dias_inicio_ventana = ?,
+				dias_fin_ventana = ?
+		`, [dias_inicio_ventana, dias_fin_ventana])
+
+		res.json({ message: 'Ventana de pedidos actualizada para todos los departamentos', dias_inicio_ventana, dias_fin_ventana })
+	} catch (err) {
+		console.error('Error actualizando ventana de pedidos:', err.message)
+		res.status(500).json({ error: 'Error al actualizar ventana de pedidos' })
+	}
+})
+
+// GET: Obtener ventanas de pedido de PDVs agrupadas por región
+router.get('/pdvs/configuracion-por-region', async (req, res) => {
+	try {
+		const [rows] = await pool.query(`
+			SELECT 
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.id_region
+					ELSE r.id_region
+				END as id_region,
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.descripcion
+					ELSE r.descripcion
+				END as region,
+				COUNT(DISTINCT p.id_pdv) as cantidad_pdvs,
+				COUNT(DISTINCT zc.id_zona_comercial) as cantidad_zonas,
+				CASE
+					WHEN COUNT(DISTINCT CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END) = 1
+					THEN MAX(CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END)
+					ELSE NULL
+				END as dia_inicio,
+				CASE
+					WHEN COUNT(DISTINCT CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END) = 1
+					THEN MAX(CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END)
+					ELSE NULL
+				END as dia_fin,
+				CASE
+					WHEN COUNT(DISTINCT CONCAT(
+						COALESCE(CASE WHEN zvp.activo = 1 THEN zvp.dia_inicio END, ''),
+						'-',
+						COALESCE(CASE WHEN zvp.activo = 1 THEN zvp.dia_fin END, '')
+					)) <= 1
+					THEN 1 ELSE 0
+				END as ventana_uniforme,
+				GROUP_CONCAT(DISTINCT zc.zona ORDER BY zc.zona SEPARATOR ', ') as zonas
+			FROM regiones r
+			INNER JOIN regiones ro ON ro.descripcion = 'Oriente'
+			INNER JOIN ciudades c ON r.id_region = c.id_region
+			INNER JOIN zonas_comerciales zc ON c.id_ciudad = zc.id_ciudad
+			INNER JOIN pdvs p ON zc.id_zona_comercial = p.id_zona_comercial
+			LEFT JOIN zona_ventanas_pedido zvp ON zc.id_zona_comercial = zvp.id_zona_comercial AND zvp.activo = 1
+			WHERE r.descripcion <> 'Sin Region'
+			GROUP BY 
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.id_region
+					ELSE r.id_region
+				END,
+				CASE
+					WHEN UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE' THEN ro.descripcion
+					ELSE r.descripcion
+				END
+			HAVING COUNT(DISTINCT p.id_pdv) > 0
+			ORDER BY region ASC
+		`)
+		res.json(rows || [])
+	} catch (err) {
+		console.error('Error obteniendo configuración por región:', err.message)
+		res.status(500).json({ error: 'Error al obtener configuración por región' })
+	}
+})
+
+// PUT: Actualizar ventana de pedidos de todos los PDVs de una región
+router.put('/pdvs/ventana-pedidos/region/:id_region', async (req, res) => {
+	try {
+		const regionId = Number(req.params.id_region)
+		const { dia_inicio, dia_fin } = req.body
+
+		if (!regionId || !dia_inicio || !dia_fin || dia_inicio < 1 || dia_fin > 31 || dia_inicio > dia_fin) {
+			return res.status(400).json({ error: 'Rango de fechas inválido para la región.' })
+		}
+
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+
+			// Verificar si la región es "Oriente" para usar la misma lógica especial del GET
+			const [[regionRow]] = await conn.query(
+				`SELECT descripcion FROM regiones WHERE id_region = ?`,
+				[regionId]
+			)
+			const isOriente = regionRow && regionRow.descripcion.trim().toLowerCase() === 'oriente'
+
+			const [zones] = await conn.query(
+				isOriente
+					? `SELECT DISTINCT zc.id_zona_comercial
+					   FROM zonas_comerciales zc
+					   INNER JOIN pdvs p ON p.id_zona_comercial = zc.id_zona_comercial
+					   WHERE UPPER(COALESCE(zc.codigo_zona, zc.zona)) = 'ORIENTE'`
+					: `SELECT DISTINCT zc.id_zona_comercial
+					   FROM ciudades c
+					   INNER JOIN zonas_comerciales zc ON zc.id_ciudad = c.id_ciudad
+					   INNER JOIN pdvs p ON p.id_zona_comercial = zc.id_zona_comercial
+					   WHERE c.id_region = ?`,
+				isOriente ? [] : [regionId]
+			)
+
+			if (zones.length === 0) {
+				await conn.rollback()
+				return res.status(404).json({ error: 'No se encontraron zonas con PDVs para esa región.' })
+			}
+
+			for (const zone of zones) {
+				await conn.query(
+					`INSERT INTO zona_ventanas_pedido (id_zona_comercial, dia_inicio, dia_fin, activo)
+					 VALUES (?, ?, ?, 1)
+					 ON DUPLICATE KEY UPDATE
+					 dia_inicio = VALUES(dia_inicio),
+					 dia_fin = VALUES(dia_fin),
+					 activo = VALUES(activo),
+					 actualizado_en = CURRENT_TIMESTAMP`,
+					[zone.id_zona_comercial, dia_inicio, dia_fin]
+				)
+			}
+
+			await conn.commit()
+			res.json({
+				message: 'Ventana de pedidos actualizada para la región.',
+				id_region: regionId,
+				dia_inicio,
+				dia_fin,
+				zonas_actualizadas: zones.length,
+			})
+		} catch (txErr) {
+			await conn.rollback()
+			throw txErr
+		} finally {
+			conn.release()
+		}
+	} catch (err) {
+		console.error('Error actualizando ventana de pedidos por región:', err.message)
+		res.status(500).json({ error: 'Error al actualizar la ventana de pedidos de la región' })
+	}
+})
+
+// ============================================================
+// RESET DE CUPOS
+// ============================================================
+
+/**
+ * POST /api/gestion/pdvs/reset-cupos
+ * Reinicia cupo_disponible de todos los PDVs al monto de su grupo.
+ * Acepta body { id_pdv } para reiniciar solo uno (opcional).
+ */
+router.post('/pdvs/reset-cupos', async (req, res) => {
+	try {
+		const { id_pdv } = req.body || {}
+		const { period, hasPdvPeriodTracking } = await ensureCurrentPdvBudgets(pool)
+
+		const [[colInfo]] = await pool.query(
+			`SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pdvs' AND COLUMN_NAME = 'cupo_disponible'`
+		)
+		if (Number(colInfo?.total || 0) === 0) {
+			return res.status(400).json({ error: 'La columna cupo_disponible no existe. Ejecuta la migración primero.' })
+		}
+
+		if (id_pdv) {
+			await pool.query(
+				`UPDATE pdvs p
+				 JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
+				 SET p.cupo_disponible = gp.monto_autorizado${hasPdvPeriodTracking ? ', p.cupo_periodo_anio = ?, p.cupo_periodo_mes = ?' : ''}
+				 WHERE p.id_pdv = ?`,
+				hasPdvPeriodTracking
+					? [period.year, period.month, Number(id_pdv)]
+					: [Number(id_pdv)]
+			)
+			return res.json({ message: `Cupo reiniciado para el PDV ${id_pdv}.` })
+		}
+
+		const [result] = await pool.query(
+			`UPDATE pdvs p
+			 JOIN grupo_pdvs gp ON gp.id_grupo_pdv = p.id_grupo_pdv
+			 SET p.cupo_disponible = gp.monto_autorizado${hasPdvPeriodTracking ? ', p.cupo_periodo_anio = ?, p.cupo_periodo_mes = ?' : ''}`,
+			hasPdvPeriodTracking ? [period.year, period.month] : []
+		)
+		return res.json({ message: `Cupos reiniciados para ${result.affectedRows} PDV(s).`, affectedRows: result.affectedRows })
+	} catch (err) {
+		console.error('Error reiniciando cupos de PDVs:', err.message)
+		return res.status(500).json({ error: 'Error al reiniciar cupos de PDVs.' })
+	}
+})
+
+/**
+ * POST /api/gestion/departamentos/reset-presupuesto
+ * Reinicia monto_ejecutado = 0 para los departamentos del periodo actual.
+ * Acepta body { id_departamento } para reiniciar solo uno (opcional).
+ */
+router.post('/departamentos/reset-presupuesto', async (req, res) => {
+	try {
+		const { id_departamento } = req.body || {}
+		const period = getCurrentPeriod()
+		await ensureCurrentDepartmentBudgets(pool)
+
+		const [[colInfo]] = await pool.query(
+			`SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'presupuesto_departamentos' AND COLUMN_NAME = 'monto_ejecutado'`
+		)
+		if (Number(colInfo?.total || 0) === 0) {
+			return res.status(400).json({ error: 'La columna monto_ejecutado no existe. Ejecuta la migración primero.' })
+		}
+
+		if (id_departamento) {
+			const [result] = await pool.query(
+				`UPDATE presupuesto_departamentos
+				 SET monto_ejecutado = 0
+				 WHERE id_departamento = ? AND periodo_anio = ? AND periodo_mes = ?`,
+				[Number(id_departamento), period.year, period.month]
+			)
+			return res.json({ message: `Presupuesto reiniciado para el departamento ${id_departamento}.`, affectedRows: result.affectedRows })
+		}
+
+		const [result] = await pool.query(
+			`UPDATE presupuesto_departamentos
+			 SET monto_ejecutado = 0
+			 WHERE periodo_anio = ? AND periodo_mes = ?`,
+			[period.year, period.month]
+		)
+		return res.json({ message: `Presupuesto reiniciado para ${result.affectedRows} registro(s).`, affectedRows: result.affectedRows })
+	} catch (err) {
+		console.error('Error reiniciando presupuesto de departamentos:', err.message)
+		return res.status(500).json({ error: 'Error al reiniciar presupuesto de departamentos.' })
 	}
 })
 

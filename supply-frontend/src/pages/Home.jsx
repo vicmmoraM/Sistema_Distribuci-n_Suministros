@@ -19,7 +19,7 @@ const ESTADO_BADGE = {
 }
 
 export default function Home() {
-  const { user, loading } = useAuth()
+  const { user, loading, refreshUser } = useAuth()
   const { isCollapsed } = useSidebar()
   const { refreshTriggers } = useDataRefresh()
   const { esComercial } = usePermissions()
@@ -67,6 +67,25 @@ export default function Home() {
     new Map(tiposSuministro.map(t => [t.descripcion, t])).values()
   )
 
+  const cargarTiposSuministro = useCallback(async (signal) => {
+    try {
+      const params = {}
+      if (esComercial && pdvSeleccionado?.id_pdv) {
+        params.pdv = pdvSeleccionado.id_pdv
+      }
+
+      const response = await api.get('/catalogos/tipo-suministros', {
+        params,
+        signal,
+      })
+
+      setTipos(response.data || [])
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+      notify('No se pudo cargar categorias de suministros permitidas.', 'error')
+    }
+  }, [esComercial, pdvSeleccionado?.id_pdv, notify])
+
   // Cargar PDVs y tipos al montar
   useEffect(() => {
     if (loading) return
@@ -76,7 +95,7 @@ export default function Home() {
 
     const loadCatalogosBase = async () => {
       try {
-        const promises = [api.get('/catalogos/tipo-suministros', { signal: controller.signal })]
+        const promises = []
         if (esComercial) {
           promises.push(api.get('/catalogos/pdvs', { signal: controller.signal }))
         }
@@ -84,10 +103,8 @@ export default function Home() {
         const results = await Promise.all(promises)
         if (cancelled) return
 
-        setTipos(results[0].data || [])
-
-        if (esComercial && results[1]) {
-          const pdvData = results[1].data || []
+        if (esComercial && results[0]) {
+          const pdvData = results[0].data || []
           setPdvs(pdvData)
           if (user?.login) {
             const pdvDelUsuario = pdvData.find((p) =>
@@ -101,7 +118,7 @@ export default function Home() {
         }
       } catch (err) {
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
-        notify('No se pudo cargar el catalogo inicial.', 'error')
+        notify('No se pudo cargar la informacion inicial.', 'error')
       }
     }
 
@@ -112,6 +129,23 @@ export default function Home() {
       controller.abort()
     }
   }, [loading, user?.login, esComercial, notify])
+
+  useEffect(() => {
+    if (loading) return
+    if (esComercial && !pdvSeleccionado?.id_pdv) {
+      setTipos([])
+      setTipo('')
+      setSuministros([])
+      return
+    }
+
+    const controller = new AbortController()
+    cargarTiposSuministro(controller.signal)
+
+    return () => {
+      controller.abort()
+    }
+  }, [loading, esComercial, pdvSeleccionado?.id_pdv, cargarTiposSuministro])
 
   // Cargar suministros cuando cambia el tipo
   useEffect(() => {
@@ -173,6 +207,24 @@ export default function Home() {
     }
   }, [refreshTriggers.pdvs, loading, esComercial, pdvSeleccionado?.id_pdv, notify])
 
+  useEffect(() => {
+    if (loading) return undefined
+
+    const controller = new AbortController()
+    refreshUser(controller.signal).catch(() => {})
+
+    const handleWindowFocus = () => {
+      refreshUser().catch(() => {})
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+
+    return () => {
+      controller.abort()
+      window.removeEventListener('focus', handleWindowFocus)
+    }
+  }, [loading, hash, refreshUser])
+
   // 🔄 Recargar suministros cuando se actualicen en Configuración
   useEffect(() => {
     if (!tipoSeleccionado || loading) return
@@ -205,20 +257,40 @@ export default function Home() {
     })
     : suministros
 
-  // Totales
-  const subtotalOficina = carrito.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
-  const subtotalLimpieza = carrito.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
+  // Totales por grupo de presupuesto
+  const subtotalOficina = carrito.filter(i => i.grupoPresupuestoId === 1).reduce((s, i) => s + i.total, 0)
+  const subtotalLimpieza = carrito.filter(i => i.grupoPresupuestoId === 2).reduce((s, i) => s + i.total, 0)
   const totalPedido = carrito.reduce((s, i) => s + i.total, 0)
+  const groupedDepartmentTotals = carrito.reduce((acc, item) => {
+    const groupId = Number(item.grupoPresupuestoId || 0)
+    acc[groupId] = (acc[groupId] || 0) + Number(item.total || 0)
+    return acc
+  }, {})
+  const departmentBudgetMap = (user?.departmentBudgets || []).reduce((acc, budget) => {
+    const groupId = Number(budget.id_grupo_presupuesto)
+    acc[groupId] = {
+      ...budget,
+      saldo: Math.max(0, Number(budget.monto_autorizado || 0) - Number(budget.monto_ejecutado || 0)),
+    }
+    return acc
+  }, {})
+  const tipoSeleccionadoObj = tiposSuministro.find((tipo) => String(tipo.id_tipo_suministro) === String(tipoSeleccionado))
+  const selectedGroupId = Number(tipoSeleccionadoObj?.id_grupo_presupuesto || 0)
+  const selectedDepartmentBudget = selectedGroupId ? departmentBudgetMap[selectedGroupId] : null
   const limiteDisponible = esComercial
-    ? Number(pdvSeleccionado?.cupo || 0)
-    : Number(user?.departmentBudget || 0)
-  const cupoExcedido = totalPedido > limiteDisponible
+    ? Number(pdvSeleccionado?.cupo_disponible ?? pdvSeleccionado?.cupo ?? 0)
+    : Number(selectedDepartmentBudget?.saldo || 0)
+  const departmentExceededGroups = Object.entries(groupedDepartmentTotals)
+    .filter(([groupId, total]) => Number(total) > Number(departmentBudgetMap[Number(groupId)]?.saldo || 0))
+    .map(([groupId]) => departmentBudgetMap[Number(groupId)]?.descripcion || 'categoria seleccionada')
+  const cupoExcedido = esComercial ? totalPedido > limiteDisponible : departmentExceededGroups.length > 0
+  const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido
 
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
     const sum = suministros.find(s => s.id_suministro === Number(suministroId))
     const tipo = tiposSuministro.find(t => t.id_tipo_suministro === Number(tipoSeleccionado))
-    if (!sum) return
+    if (!sum || !tipo) return
 
     setCarrito(prev => [...prev, {
       id: createId('cart-item'),
@@ -226,6 +298,7 @@ export default function Home() {
       suministroNombre: sum.descripcion,
       tipoId: tipo.id_tipo_suministro,
       tipoNombre: tipo.descripcion,
+      grupoPresupuestoId: tipo.id_grupo_presupuesto,
       cantidad: Number(cantidad),
       precioUnitario: Number(sum.precio),
       total: Number(cantidad) * Number(sum.precio),
@@ -247,10 +320,11 @@ export default function Home() {
   const handlePedido = async () => {
     if (carrito.length === 0) return
     if (esComercial && !pdvSeleccionado) return
+
     if (cupoExcedido) {
       setError(esComercial
         ? 'El total supera el cupo asignado al PDV.'
-        : 'El total supera el presupuesto asignado al departamento.')
+        : `El total supera el presupuesto asignado para ${departmentExceededGroups.join(', ')}.`)
       return
     }
     setEnviando(true)
@@ -261,6 +335,7 @@ export default function Home() {
         payload.pdvId = pdvSeleccionado.id_pdv
       }
       const res = await api.post('/pedidos', payload)
+      await refreshUser()
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
       setError(err.response?.data?.error || 'Error al procesar el pedido.')
@@ -401,18 +476,29 @@ export default function Home() {
                 {esComercial && pdvSeleccionado && (
                   <div className="pdv-info-tags">
                     <span className="pdv-tag cupo">
-                      Cupo: ${Number(pdvSeleccionado.cupo).toFixed(2)}
+                      Disponible: ${Number(pdvSeleccionado.cupo_disponible ?? pdvSeleccionado.cupo).toFixed(2)} / ${Number(pdvSeleccionado.cupo).toFixed(2)}
                     </span>
                     <span className="pdv-tag info">PDV: {pdvSeleccionado.descripcion}</span>
                     <span className="pdv-tag info">{pdvSeleccionado.ciudad}</span>
                   </div>
                 )}
 
-                {!esComercial && (
+                {!esComercial && (user?.departmentBudgets || []).length > 0 && (
                   <div className="pdv-info-tags">
-                    <span className="pdv-tag cupo">
-                      Presupuesto: ${Number(user?.departmentBudget || 0).toFixed(2)}
-                    </span>
+                    {selectedDepartmentBudget ? (
+                      <>
+                        <span className="pdv-tag cupo">
+                          {selectedDepartmentBudget.descripcion}: ${Number(selectedDepartmentBudget.saldo || 0).toFixed(2)} / ${Number(selectedDepartmentBudget.monto_autorizado || 0).toFixed(2)}
+                        </span>
+                        <span className="pdv-tag info">
+                          Ejecutado: ${Number(selectedDepartmentBudget.monto_ejecutado || 0).toFixed(2)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="pdv-tag info">
+                        Selecciona una categoria para ver el saldo disponible.
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -518,7 +604,7 @@ export default function Home() {
                           <tr key={item.id}>
                             <td className="item-name">{item.suministroNombre}</td>
                             <td>
-                              <span className={`type-badge ${item.tipoId === 1 ? 'oficina' : 'limpieza'}`}>
+                              <span className={`type-badge ${item.grupoPresupuestoId === 1 ? 'oficina' : 'limpieza'}`}>
                                 {item.tipoNombre}
                               </span>
                             </td>
@@ -567,7 +653,7 @@ export default function Home() {
             <div className="submit-section">
               <button
                 onClick={handlePedido}
-                disabled={enviando || carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido}
+                disabled={debeDeshabilitarBoton}
                 className="submit-button">
                 {enviando ? 'Enviando pedido...' : 'Realizar Pedido'}
               </button>

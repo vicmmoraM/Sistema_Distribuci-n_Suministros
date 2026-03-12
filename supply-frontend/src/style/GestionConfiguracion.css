@@ -1,0 +1,453 @@
+.gestion-configuracion-section {
+  padding: 2rem;
+}
+
+.gestion-configuracion-section h2 {
+  margin-bottom: 2rem;
+  color: #333;
+}
+
+/* Tabs */
+.gestion-configuracion-section .tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.gestion-configuracion-section .tabs .tab {
+  padding: 0.75rem 1.5rem;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.3s ease;
+}
+
+.gestion-configuracion-section .tabs .tab:hover {
+  color: #333;
+}
+
+.gestion-configuracion-section .tabs .tab.active {
+  color: #2c5282;
+  border-bottom-color: #2c5282;
+}
+
+.gestion-configuracion-section .tab-content {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Departamentos Tab */
+.gestion-configuracion-section .departamentos-config {
+  max-width: 900px;
+}
+
+.gestion-configuracion-section .departamentos-config h3 {
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.gestion-configuracion-section .help-text {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+  font-style: italic;
+}
+
+.gestion-configuracion-section .config-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.gestion-configuracion-section .form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.gestion-configuracion-section .form-group label {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.gestion-configuracion-section .form-group input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+.gestion-configuracion-section .form-group input:focus {
+  outline: none;
+  border-color: #2c5282;
+  box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.1);
+}
+
+.gestion-configuracion-section .save-button {
+  padding: 0.75rem 1.5rem;
+  background: #2c5282;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  align-self: flex-end;
+}
+
+.gestion-configuracion-section .save-button:hover:not(:disabled) {
+  background: #1e3a5f;
+}
+
+.gestion-configuracion-section .save-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.gestion-configuracion-section .save-button.danger {
+  background: #c53030;
+}
+
+.gestion-configuracion-section .save-button.danger:hover:not(:disabled) {
+  background: #9b2c2c;
+}
+
+/* Reset cards */
+.gestion-configuracion-section .reset-cards {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+
+.gestion-configuracion-section .reset-card {
+  flex: 1;
+  min-width: 260px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gestion-configuracion-section .reset-card h4 {
+  margin: 0;
+  color: #333;
+  font-size: 1rem;
+}
+
+.gestion-configuracion-section .reset-card p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.gestion-configuracion-section .reset-card .save-button {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+/* Departamentos List */
+.gestion-configuracion-section .departamentos-list {
+  margin-top: 2rem;
+}
+
+.gestion-configuracion-section .departamentos-list h4 {
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.gestion-configuracion-section .departamentos-list table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.gestion-configuracion-section .departamentos-list th {
+  background: #f5f5f5;
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.gestion-configuracion-section .departamentos-list td {
+  padding: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.gestion-configuracion-section .departamentos-list tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.gestion-configuracion-section .ventana-preview {
+  font-weight: 600;
+  color: #2c5282;
+}
+
+/* PDVs Tab */
+.gestion-configuracion-section .pdvs-config {
+  max-width: 1200px;
+}
+
+.gestion-configuracion-section .pdvs-config h3 {
+  margin-bottom: 1rem;
+  color: #333;
+}
+
+.gestion-configuracion-section .regiones-list {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.gestion-configuracion-section .region-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.gestion-configuracion-section .region-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem;
+  background: #f5f5f5;
+  cursor: default;
+  user-select: none;
+  border-bottom: 1px solid #e0e0e0;
+  transition: background 0.3s ease;
+}
+
+.gestion-configuracion-section .region-header:hover {
+  background: #efefef;
+}
+
+.gestion-configuracion-section .region-header.static {
+  align-items: flex-start;
+}
+
+.gestion-configuracion-section .region-title {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.gestion-configuracion-section .region-meta {
+  margin-top: 0.35rem;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.gestion-configuracion-section .window-status {
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gestion-configuracion-section .window-status.uniform {
+  background: #e6f4ea;
+  color: #146c2e;
+}
+
+.gestion-configuracion-section .window-status.mixed {
+  background: #fff4e5;
+  color: #9a5b00;
+}
+
+.gestion-configuracion-section .toggle-icon {
+  color: #666;
+  font-size: 0.8rem;
+  transition: transform 0.3s ease;
+}
+
+.gestion-configuracion-section .region-content {
+  padding: 1.5rem;
+  animation: slideDown 0.3s ease-out;
+}
+
+.gestion-configuracion-section .region-content.always-open {
+  animation: none;
+}
+
+.gestion-configuracion-section .region-form-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(160px, 220px) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.gestion-configuracion-section .region-zones {
+  margin-top: 1rem;
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@keyframes slideDown {
+  from {
+    max-height: 0;
+    opacity: 0;
+  }
+  to {
+    max-height: 1000px;
+    opacity: 1;
+  }
+}
+
+.gestion-configuracion-section .pdvs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.gestion-configuracion-section .pdvs-table th {
+  background: #f9f9f9;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+  font-size: 0.85rem;
+}
+
+.gestion-configuracion-section .pdvs-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 0.9rem;
+}
+
+.gestion-configuracion-section .pdvs-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.gestion-configuracion-section .pdvs-table .codigo {
+  font-weight: 600;
+  color: #2c5282;
+}
+
+.gestion-configuracion-section .pdvs-table .direccion {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.gestion-configuracion-section .pdvs-table select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  width: 100%;
+  cursor: pointer;
+}
+
+.gestion-configuracion-section .pdvs-table select:focus {
+  outline: none;
+  border-color: #2c5282;
+  box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.1);
+}
+
+.gestion-configuracion-section .save-button-small {
+  padding: 0.4rem 0.8rem;
+  background: #2c5282;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.gestion-configuracion-section .save-button-small:hover:not(:disabled) {
+  background: #1e3a5f;
+}
+
+.gestion-configuracion-section .save-button-small:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.gestion-configuracion-section .empty-message {
+  text-align: center;
+  color: #999;
+  padding: 2rem;
+  font-style: italic;
+}
+
+/* Loading */
+.gestion-configuracion-section .loading {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .gestion-configuracion-section .config-form {
+    grid-template-columns: 1fr;
+  }
+
+  .gestion-configuracion-section .region-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gestion-configuracion-section .region-header.static {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .gestion-configuracion-section .tabs {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .gestion-configuracion-section .tabs .tab {
+    border-bottom: none;
+    border-left: 3px solid transparent;
+  }
+
+  .gestion-configuracion-section .tabs .tab.active {
+    border-left-color: #2c5282;
+    border-bottom: none;
+  }
+
+  .gestion-configuracion-section .pdvs-table {
+    font-size: 0.8rem;
+  }
+
+  .gestion-configuracion-section .pdvs-table th,
+  .gestion-configuracion-section .pdvs-table td {
+    padding: 0.5rem;
+  }
+}
