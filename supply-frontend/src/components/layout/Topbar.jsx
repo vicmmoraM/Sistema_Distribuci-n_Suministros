@@ -16,7 +16,7 @@ export default function Topbar({
 
       <div className="navbar-brand">
         <div className="navbar-logo">
-          <img src="images/LOGO FC SINTETIZADO FONDO BLANCO.jpg" alt="FarmCorp Logo" />
+          <img src="/images/LOGO FC SINTETIZADO FONDO BLANCO.jpg" alt="FarmCorp Logo" />
         </div>
         <div className="navbar-title">
           <h1>Sistema Integral de Adquisiciones FC</h1>

@@ -43,7 +43,9 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // HTTPS en producción
+    // Eliminamos la dependencia de NODE_ENV para el secure, porque NODE_ENV es 'production' en Docker
+    // y eso obligaba a la cookie a usar HTTPS (Secure: true), causando que el navegador en HTTP la rechace.
+    secure: process.env.SESSION_SECURE === 'true',
     maxAge: Number(process.env.SESSION_MAX_AGE) || 28800000, // 8 horas
   },
 }));
