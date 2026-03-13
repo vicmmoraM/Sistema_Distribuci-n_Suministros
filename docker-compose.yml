@@ -16,7 +16,7 @@ services:
       # Base de datos
       - DB_HOST=10.101.183.40
       - DB_PORT=3306
-      - DB_NAME=DB_SupplyChain
+      - DB_NAME=db_sia
       - DB_USER=dbSystemSC
       - DB_PASS=C0n3x10nSC2024
 
@@ -43,7 +43,7 @@ services:
       #   - http://localhost:5173
       #   - http://localhost:5173,http://127.0.0.1:5173
       #   - http://localhost:5173,https://app.farmcorp.com.ec
-      - CORS_ORIGIN=http://localhost:5173,http://172.28.32.1:5173
+      - CORS_ORIGIN=http://localhost:5173,http://10.101.183.41:5173
 
       # Email
       - MAIL_ENABLED=true
