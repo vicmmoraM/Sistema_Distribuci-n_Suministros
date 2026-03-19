@@ -7,7 +7,7 @@ const path = require('path')
 const fs = require('fs')
 const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
-const { createObjectCsvWriter } = require('csv-writer')
+const puppeteer = require('puppeteer')
 const nodemailer = require('nodemailer')
 const PedidoRepository = require('../repositories/PedidoRepository')
 const { ensureCurrentDepartmentBudgets, ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
@@ -487,64 +487,68 @@ router.post('/', requireAuth, async (req, res) => {
     const subtotalOficina = itemsValidados.filter(i => i.tipoId === 1).reduce((s, i) => s + i.total, 0)
     const subtotalLimpieza = itemsValidados.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
 
-    // ── 10. Generar CSV ────────────────────────────────────────────────────
+    // ── 10. Generar PDF ────────────────────────────────────────────────────
     const filesPath = process.env.FILES_PATH || './temp_files'
     if (!fs.existsSync(filesPath)) fs.mkdirSync(filesPath, { recursive: true })
 
     const nombreArchivo = `pedidoSuministro_${req.session.userlogin}_${fecha}`
-    const csvPath = path.join(filesPath, `${nombreArchivo}.csv`)
+    const pdfPath = path.join(filesPath, `${nombreArchivo}.pdf`)
 
-    const lugarSolicitud = esComercial
-      ? (pdv?.descripcion || req.session.userlogin)
-      : `Departamento ${departmentName.toUpperCase()}`
-    const ciudadSolicitud = esComercial ? (pdv?.ciudad || 'N/A') : 'N/A'
-    const direccionSolicitud = esComercial ? (pdv?.direccion || 'N/A') : 'N/A'
-    const limiteMonto = esComercial ? Number(pdv?.cupo || 0) : Number(departmentBudget || 0)
-    const limiteEtiqueta = esComercial ? 'Cupo PDV' : 'Presupuesto Departamento'
+    // Armar HTML para el PDF
+    const html = `
+      <html>
+      <head>
+        <style>
+          body { font-family: Verdana, Arial, sans-serif; font-size: 14px; }
+          h2 { color: #2c2f88; }
+          table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+          th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+          th { background: #f3f4f6; }
+          .badge { display: inline-block; padding: 4px 12px; border-radius: 8px; background: #ffe082; color: #6b4f00; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <h2>Detalle del Pedido #${cabeceraPedidoId}</h2>
+        <p><b>Solicitante:</b> ${req.session.username}</p>
+        <p><b>Departamento:</b> ${departmentName}</p>
+        <p><b>Fecha:</b> ${fecha}</p>
+        <p><b>Estado:</b> <span class="badge">EN ESPERA</span></p>
+        <p><b>Total:</b> $${totalPedido.toFixed(2)}</p>
+        <h3>Productos Solicitados</h3>
+        <table>
+          <tr><th>Suministro</th><th>Cantidad</th><th>P. Unitario</th><th>Subtotal</th></tr>
+          ${itemsValidados.map(item => `
+            <tr>
+              <td>${item.suministroNombre}</td>
+              <td>${item.cantidad}</td>
+              <td>$${item.precioUnitario.toFixed(2)}</td>
+              <td>$${item.total.toFixed(2)}</td>
+            </tr>
+          `).join('')}
+        </table>
+      </body>
+      </html>
+    `;
 
-    const headerLines = [
-      `Solicitado por:,${req.session.username}`,
-      `Origen:,${lugarSolicitud}`,
-      `Ciudad:,${ciudadSolicitud}`,
-      `Dirección:,${direccionSolicitud}`,
-      `${limiteEtiqueta}:,$${limiteMonto.toFixed(2)}`,
-      '',
-    ].join('\n')
-
-    const csvWriter = createObjectCsvWriter({
-      path: csvPath,
-      header: [
-        { id: 'descripcion', title: 'Descripcion' },
-        { id: 'tipo', title: 'Tipo de Suministro' },
-        { id: 'cantidad', title: 'Cantidad' },
-        { id: 'precioUnitario', title: 'Precio Unitario' },
-        { id: 'total', title: 'Total' },
-      ],
-    })
-
-    fs.writeFileSync(csvPath, headerLines)
-    await csvWriter.writeRecords(itemsValidados.map(i => ({
-      descripcion: i.suministroNombre,
-      tipo: i.tipoNombre,
-      cantidad: i.cantidad,
-      precioUnitario: i.precioUnitario,
-      total: i.total.toFixed(2),
-    })))
-
-    fs.appendFileSync(csvPath, [
-      '',
-      `,,, Total S. Oficina:,${subtotalOficina.toFixed(2)}`,
-      `,,, Total S. Limpieza:,${subtotalLimpieza.toFixed(2)}`,
-      '',
-      `,,, Total:,${totalPedido.toFixed(2)}`,
-    ].join('\n'))
+    await new Promise(async (resolve, reject) => {
+      try {
+        const browser = await puppeteer.launch();
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        await page.pdf({ path: pdfPath, format: 'A4' });
+        await browser.close();
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
 
     // ── 11. Enviar email ───────────────────────────────────────────────────
-    let emailEnviado = false
+    let emailEnviado = false;
 
     if (process.env.MAIL_ENABLED === 'true') {
-      console.log('📧 MAIL_ENABLED=true — intentando enviar correo a:', process.env.MAIL_TO)
-      console.log('   CSV path:', csvPath, '| existe:', fs.existsSync(csvPath))
+      console.log('📧 MAIL_ENABLED=true — intentando enviar correo a:', process.env.MAIL_TO);
+      console.log('   PDF path:', pdfPath, '| existe:', fs.existsSync(pdfPath));
       try {
         const info = await transporter.sendMail({
           from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_USER}>`,
@@ -554,25 +558,25 @@ router.post('/', requireAuth, async (req, res) => {
           html: `<font face="verdana" size="3">
                       Hola,<br><br>
                       Tienes un nuevo pedido de suministro por atender.<br><br>
-                      Se adjunta la solicitud en formato CSV.<br><br>
+                      Se adjunta la solicitud en formato PDF.<br><br>
                       <strong>Atentamente,</strong><br>Sistema de Pedidos.
                     </font>`,
-          attachments: [{ filename: `${nombreArchivo}.csv`, path: csvPath }],
-        })
-        emailEnviado = true
-        console.log('✅ Email aceptado! MessageID:', info.messageId, '| Respuesta:', info.response)
+          attachments: [{ filename: `${nombreArchivo}.pdf`, path: pdfPath }],
+        });
+        emailEnviado = true;
+        console.log('✅ Email aceptado! MessageID:', info.messageId, '| Respuesta:', info.response);
       } catch (mailErr) {
-        console.error('❌ Error enviando email:')
-        console.error('   Código    :', mailErr.code)
-        console.error('   Respuesta :', mailErr.responseCode)
-        console.error('   Mensaje   :', mailErr.message)
-        console.error('   Detalle   :', mailErr.response)
+        console.error('❌ Error enviando email:');
+        console.error('   Código    :', mailErr.code);
+        console.error('   Respuesta :', mailErr.responseCode);
+        console.error('   Mensaje   :', mailErr.message);
+        console.error('   Detalle   :', mailErr.response);
       } finally {
-        if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath)
+        if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
       }
     } else {
-      // En modo test simplemente eliminamos el CSV
-      if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath)
+      // En modo test simplemente eliminamos el PDF
+      if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
     }
 
     return res.json({
@@ -582,7 +586,7 @@ router.post('/', requireAuth, async (req, res) => {
       mensaje: emailEnviado
         ? 'Su requerimiento ha sido enviado.'
         : 'Pedido registrado correctamente.',
-    })
+    });
 
   } catch (err) {
     await conn.rollback()

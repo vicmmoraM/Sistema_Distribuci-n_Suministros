@@ -358,6 +358,36 @@ export default function Aprobaciones() {
               <div>
                 <h1>Aprobación de Suministros</h1>
                 <p className="subtitle">Validación y aprobación de solicitudes de suministros por departamento</p>
+                {/* Badge de nuevos pedidos del día */}
+                {pedidos.length > 0 && (() => {
+                  const hoy = new Date();
+                  const yyyy = hoy.getFullYear();
+                  const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+                  const dd = String(hoy.getDate()).padStart(2, '0');
+                  const hoyStr = `${yyyy}-${mm}-${dd}`;
+                  const pedidosHoy = pedidos.filter(p => {
+                    // Usar fecha_registro, que se muestra en la tabla
+                    if (!p.fecha_registro) return false;
+                    const fechaPedido = new Date(p.fecha_registro);
+                    const pedidoStr = `${fechaPedido.getFullYear()}-${String(fechaPedido.getMonth() + 1).padStart(2, '0')}-${String(fechaPedido.getDate()).padStart(2, '0')}`;
+                    return pedidoStr === hoyStr;
+                  });
+                  return pedidosHoy.length > 0 ? (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        background: '#2c2f88',
+                        color: 'white',
+                        borderRadius: '1rem',
+                        padding: '0.25rem 0.75rem',
+                        fontWeight: 'bold',
+                        fontSize: '1rem',
+                      }}>
+                        {`Pedidos ingresados hoy: ${pedidosHoy.length}`}
+                      </span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <img 
                 src="/images/LOGO OFICIAL FC COMPLETO FONDO TRANSPARENTE.png" 

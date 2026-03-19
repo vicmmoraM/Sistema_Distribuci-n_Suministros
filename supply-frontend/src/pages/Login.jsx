@@ -240,9 +240,9 @@ export default function Login() {
                     backgroundColor: deptAutoFilled ? '#f3f4f6' : 'white',
                   }}>
                   <option value="">Seleccionar departamento...</option>
-                  {departamentos.map(d => (
-                    <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
-                  ))}
+                    {(Array.isArray(departamentos) ? departamentos : []).map(d => (
+                      <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
+                    ))}
                 </select>
               </div>
               {deptAutoFilled && (

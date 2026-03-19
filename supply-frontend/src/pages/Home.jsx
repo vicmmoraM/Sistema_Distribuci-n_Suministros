@@ -608,7 +608,35 @@ export default function Home() {
                                 {item.tipoNombre}
                               </span>
                             </td>
-                            <td>{item.cantidad}</td>
+                            <td>
+                              <input
+                                type="number"
+                                min={1}
+                                max={100}
+                                value={item.cantidad === 0 ? '' : item.cantidad}
+                                style={{ width: '60px' }}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  // Permitir vacío temporalmente
+                                  if (val === '') {
+                                    setCarrito(prev => prev.map(i =>
+                                      i.id === item.id
+                                        ? { ...i, cantidad: 0, total: 0 }
+                                        : i
+                                    ));
+                                    return;
+                                  }
+                                  const nuevaCantidad = Number(val);
+                                  if (!isNaN(nuevaCantidad) && nuevaCantidad > 0) {
+                                    setCarrito(prev => prev.map(i =>
+                                      i.id === item.id
+                                        ? { ...i, cantidad: nuevaCantidad, total: nuevaCantidad * i.precioUnitario }
+                                        : i
+                                    ));
+                                  }
+                                }}
+                              />
+                            </td>
                             <td>${item.precioUnitario.toFixed(2)}</td>
                             <td className="item-name">${item.total.toFixed(2)}</td>
                             <td>
