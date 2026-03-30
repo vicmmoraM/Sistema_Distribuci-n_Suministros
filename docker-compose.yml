@@ -48,6 +48,16 @@ services:
       # Email
       - MAIL_ENABLED=true
       - MAIL_HOST=chimborazo.ecuahosting.net
+      - MAIL_PORT=587
+      - MAIL_SECURE=false
+      - MAIL_USER=reqsuministros@farmcorp.com.ec
+      - MAIL_PASS=Sumin!str0sFC024
+      - MAIL_FROM_NAME="Solicitud de Suministros"
+      - MAIL_TO=estrella.cantos@farmcorp.com.ec
+      - MAIL_REPLY_TO=estrella.cantos@farmcorp.com.ec
+
+      # Archivos
+      - FILES_PATH=/tmp/uploads
 
     restart: unless-stopped
     networks:

@@ -1,0 +1,43 @@
+# --- BASE DE DATOS (Ajustado para local) ---
+DB_HOST=127.0.0.1
+DB_PORT=3301
+DB_NAME=db_sia
+DB_USER=root
+DB_PASS=admin
+
+
+# --- AUTH (LDAP para autenticación, BD sigue local) ---
+AUTH_MODE=ldap
+
+# --- LDAP (Desactivado en local) ---
+LDAP_URL=ldap://SRVDCR000.farmcorp.com.ec
+LDAP_HOST=LDAP://SRVDCR000.farmcorp.com.ec
+LDAP_SERVICE_DN=src_TI_ldap@farmcorp.com.ec
+LDAP_SERVICE_PASS=Farmc0rp*
+LDAP_BASE_OU=ou=usuarios,ou=farmcorp,dc=farmcorp,dc=com,dc=ec
+ 
+# --- SERVIDOR ---
+PORT=3001
+NODE_ENV=development
+
+# --- SESIONES ---
+SESSION_SECRET=FarmcorpSupplyChain2024SecretKey
+SESSION_MAX_AGE=28800000
+
+# --- CORS ---
+CORS_ORIGIN=http://localhost:5173
+
+# --- EMAIL (Desactivado para evitar errores de red) ---
+MAIL_ENABLED=true
+MAIL_HOST=chimborazo.ecuahosting.net
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USER=reqsuministros@farmcorp.com.ec
+MAIL_PASS=Sumin!str0sFC024
+MAIL_FROM_NAME=Solicitud de Suministros
+MAIL_TO=pasante.desarrollo@farmcorp.com.ec
+MAIL_REPLY_TO=pasante.desarrollo@farmcorp.com.ec
+ 
+
+# --- ARCHIVOS TEMPORALES ---
+FILES_PATH=./temp_files

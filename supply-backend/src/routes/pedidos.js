@@ -126,7 +126,7 @@ router.post('/', requireAuth, async (req, res) => {
     // ── 2. Contexto del usuario (departamento y presupuesto) ───────────────
     // Buscar el registro de presupuesto del periodo actual (mes > anual > cualquiera)
     const anioActual = new Date().getFullYear()
-    const mesActual  = new Date().getMonth() + 1
+    const mesActual = new Date().getMonth() + 1
 
     const deptBudgetSelect = hasMontoEjecutado
       ? 'COALESCE(pd.monto_autorizado, 0) AS monto_autorizado, COALESCE(pd.monto_ejecutado, 0) AS monto_ejecutado'
@@ -148,12 +148,12 @@ router.post('/', requireAuth, async (req, res) => {
       [anioActual, mesActual, req.session.departamento]
     )
 
-    const departmentName       = deptRows.length > 0 ? deptRows[0].departmentName : ''
-    const presupuestoId        = deptRows.length > 0 ? deptRows[0].id_presupuesto_departamento : null
-    const montoAutorizado      = deptRows.length > 0 ? Number(deptRows[0].monto_autorizado || 0) : 0
-    const montoEjecutado       = deptRows.length > 0 ? Number(deptRows[0].monto_ejecutado  || 0) : 0
-    const departmentBudget     = montoAutorizado - montoEjecutado          // saldo disponible
-    const esComercial          = departmentName === 'comercial'
+    const departmentName = deptRows.length > 0 ? deptRows[0].departmentName : ''
+    const presupuestoId = deptRows.length > 0 ? deptRows[0].id_presupuesto_departamento : null
+    const montoAutorizado = deptRows.length > 0 ? Number(deptRows[0].monto_autorizado || 0) : 0
+    const montoEjecutado = deptRows.length > 0 ? Number(deptRows[0].monto_ejecutado || 0) : 0
+    const departmentBudget = montoAutorizado - montoEjecutado          // saldo disponible
+    const esComercial = departmentName === 'comercial'
 
     if (esComercial && !pdvId) {
       await conn.rollback()
@@ -532,13 +532,30 @@ router.post('/', requireAuth, async (req, res) => {
 
     await new Promise(async (resolve, reject) => {
       try {
-        const browser = await puppeteer.launch();
+        console.log('Iniciando Puppeteer en:', process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser');
+        const browser = await puppeteer.launch({
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
+          headless: 'new',
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--no-zygote',
+            '--single-process'
+          ],
+          protocolTimeout: 60000
+        });
+        console.log('Browser iniciado, creando página...');
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
         await page.pdf({ path: pdfPath, format: 'A4' });
         await browser.close();
+        console.log('PDF creado exitosamente.');
         resolve();
       } catch (err) {
+        console.error('Error interno de Puppeteer:', err);
         reject(err);
       }
     });
@@ -1065,7 +1082,7 @@ router.post('/:id/rechazar', requireAuth, async (req, res) => {
 
       // Solo restaurar cupos si el pedido estaba pendiente (estado 1 = En espera)
       const estabaPendiente = Number(pedido.id_estado_pedido) === 1
-      const totalPedido     = Number(pedido.total_pedido || 0)
+      const totalPedido = Number(pedido.total_pedido || 0)
 
       if (estabaPendiente && totalPedido > 0) {
         // Revisar si las columnas de tracking existen
@@ -1093,7 +1110,7 @@ router.post('/:id/rechazar', requireAuth, async (req, res) => {
         } else if (!pedido.id_pdv && hasMontoEj && pedido.id_departamento) {
           // Restaurar presupuesto del departamento (periodo actual)
           const anio = new Date().getFullYear()
-          const mes  = new Date().getMonth() + 1
+          const mes = new Date().getMonth() + 1
           await conn.query(
             `UPDATE presupuesto_departamentos
              SET monto_ejecutado = GREATEST(0, monto_ejecutado - ?)

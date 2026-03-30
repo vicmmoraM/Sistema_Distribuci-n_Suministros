@@ -268,6 +268,13 @@ Verificar que:
 2. Las credenciales son correctas
 3. El firewall permite la conexión
 
+### Actualizar imágenes
+
+```bash
+docker-compose pull
+docker-compose up -d 
+```
+
 ### Verificar logs
 
 ```bash

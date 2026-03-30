@@ -4,6 +4,19 @@
 
 FROM node:18-alpine
 
+# Instalar Chromium y las librerías necesarias para Puppeteer en Alpine
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont
+
+# Indicar a Puppeteer que use el Chromium del OS en lugar de descargar uno
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # Establecer el directorio de trabajo
 WORKDIR /app
 
