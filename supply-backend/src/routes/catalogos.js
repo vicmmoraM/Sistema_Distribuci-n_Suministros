@@ -121,7 +121,7 @@ router.get('/estados-pedido', requireAuth, async (req, res) => {
  * Lista suministros filtrados por tipo.
  */
 router.get('/suministros', requireAuth, async (req, res) => {
-  const { tipo, pdv, q } = req.query;
+  const { tipo, pdv, q, proveedor } = req.query;
 
   if (!tipo) {
     return res.status(400).json({ error: 'El parámetro "tipo" es requerido.' });
@@ -130,12 +130,38 @@ router.get('/suministros', requireAuth, async (req, res) => {
   try {
     const idPdv = pdv ? Number(pdv) : null
     const idDepartamento = Number(req.session?.departamento || 0)
+    const idProveedor = proveedor ? Number(proveedor) : null
+
+    // Obtener proveedor de rotación del mes actual si es departamento (no comercial)
+    const mesActual = new Date().getMonth() + 1
+    let idProveedorRotacion = null
+    if (!idPdv) {
+      const [provRows] = await pool.query(
+        `SELECT dpr.id_proveedor
+         FROM departamento_proveedores_rotacion dpr
+         WHERE dpr.id_departamento = ?
+           AND dpr.orden_rotacion = (
+             SELECT (((? - 1) % COUNT(*)) + 1)
+             FROM departamento_proveedores_rotacion
+             WHERE id_departamento = ?
+           )
+         LIMIT 1`,
+        [idDepartamento, mesActual, idDepartamento]
+      )
+      if (provRows.length > 0) idProveedorRotacion = provRows[0].id_proveedor
+    }
+
     let filtro = ''
-    let params = [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento]
+    // params: [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento, idPdv, idPdv, idProveedorRotacion, idProveedorRotacion]
+    let params = [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento, idPdv, idPdv, idProveedorRotacion, idProveedorRotacion]
     if (q && q.trim().length > 0) {
-      filtro = ` AND (cv.suministro LIKE ? OR cv.nombre_proveedor LIKE ?)`
+      filtro += ` AND (cv.suministro LIKE ? OR cv.nombre_proveedor LIKE ?)`
       const likeQ = `%${q.trim()}%`
       params.push(likeQ, likeQ)
+    }
+    if (idProveedor) {
+      filtro += ` AND cv.id_proveedor = ?`
+      params.push(idProveedor)
     }
     const [rows] = await pool.query(
       `SELECT
@@ -162,7 +188,11 @@ router.get('/suministros', requireAuth, async (req, res) => {
               AND ds.id_suministro = cv.id_suministro
           ))
         )
-        AND (p.id_proveedor_principal IS NULL OR cv.id_proveedor = p.id_proveedor_principal)
+        AND (
+          (? IS NOT NULL AND (p.id_proveedor_principal IS NULL OR cv.id_proveedor = p.id_proveedor_principal))
+          OR
+          (? IS NULL AND (? IS NULL OR cv.id_proveedor = ?))
+        )
         ${filtro}
       ORDER BY cv.suministro`,
       params
