@@ -54,6 +54,10 @@ export default function Home() {
   const [suministroSearch, setSuministroSearch] = useState('')
   const [showSuministroDropdown, setShowSuministroDropdown] = useState(false)
   const [cantidad, setCantidad] = useState(1)
+  const [suministrosBusqueda, setSuministrosBusqueda] = useState([])
+  const [buscando, setBuscando] = useState(false)
+  const debounceRef = useRef()
+  const searchAbortRef = useRef(null)
 
   // Carrito
   const [carrito, setCarrito] = useState([])
@@ -249,13 +253,9 @@ export default function Home() {
 
   const getSuministroLabel = (s) => `${s.descripcion} - $${Number(s.precio).toFixed(2)} `
 
+  // Live search: sugerencias
   const suministroSearchTerm = suministroSearch.trim().toLowerCase()
-  const suministrosFiltrados = suministroSearchTerm
-    ? suministros.filter((s) => {
-      const text = `${s.descripcion} ${s.proveedor}`.toLowerCase()
-      return text.includes(suministroSearchTerm)
-    })
-    : suministros
+  const sugerencias = suministroSearchTerm.length > 0 ? suministrosBusqueda : suministros
 
   // Totales por grupo de presupuesto
   const subtotalOficina = carrito.filter(i => i.grupoPresupuestoId === 1).reduce((s, i) => s + i.total, 0)
@@ -527,9 +527,34 @@ export default function Home() {
                     type="text"
                     value={suministroSearch}
                     onChange={e => {
-                      setSuministroSearch(e.target.value)
-                      setSuministroId('')
-                      setShowSuministroDropdown(true)
+                      const value = e.target.value;
+                      setSuministroSearch(value);
+                      setSuministroId('');
+                      setShowSuministroDropdown(true);
+                      if (debounceRef.current) clearTimeout(debounceRef.current);
+                      if (searchAbortRef.current) searchAbortRef.current.abort();
+                      setSuministrosBusqueda([]); // Limpiar sugerencias inmediatamente
+                      setBuscando(true); // Mostrar 'Buscando...'
+                      if (!tipoSeleccionado) return;
+                      debounceRef.current = setTimeout(async () => {
+                        if (searchAbortRef.current) searchAbortRef.current.abort();
+                        if (value.trim().length === 0) {
+                          setSuministrosBusqueda([]);
+                          setBuscando(false);
+                          return;
+                        }
+                        const controller = new AbortController();
+                        searchAbortRef.current = controller;
+                        try {
+                          const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : '';
+                          const resp = await api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}&q=${encodeURIComponent(value)}`, { signal: controller.signal });
+                          setSuministrosBusqueda(resp.data || []);
+                        } catch (err) {
+                          if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+                          setSuministrosBusqueda([]);
+                        }
+                        setBuscando(false);
+                      }, 350);
                     }}
                     onFocus={() => setShowSuministroDropdown(true)}
                     onBlur={() => setTimeout(() => setShowSuministroDropdown(false), 120)}
@@ -539,12 +564,12 @@ export default function Home() {
                   />
                   {showSuministroDropdown && tipoSeleccionado && (
                     <div className="supply-dropdown" role="listbox" aria-label="Suministros sugeridos">
-                      {suministrosFiltrados.length === 0 ? (
+                      {sugerencias.length === 0 ? (
                         <div className="supply-dropdown-item supply-dropdown-item--empty">
-                          Sin coincidencias
+                          {buscando ? 'Buscando...' : 'Sin coincidencias'}
                         </div>
                       ) : (
-                        suministrosFiltrados.slice(0, 12).map((s) => (
+                        sugerencias.slice(0, 12).map((s) => (
                           <button
                             key={s.id_suministro}
                             type="button"
