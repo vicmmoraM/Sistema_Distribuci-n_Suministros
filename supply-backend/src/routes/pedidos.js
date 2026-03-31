@@ -7,13 +7,14 @@ const path = require('path')
 const fs = require('fs')
 const { pool } = require('../config/db')
 const { requireAuth } = require('../middleware/auth')
-const puppeteer = require('puppeteer')
+const React = require('react')
+const { Document, Page, Text, View, StyleSheet, renderToBuffer } = require('@react-pdf/renderer')
 const nodemailer = require('nodemailer')
 const PedidoRepository = require('../repositories/PedidoRepository')
 const { ensureCurrentDepartmentBudgets, ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
 
 const pedidoRepository = new PedidoRepository()
-const outsideOrderWindowLogPath = path.resolve(__dirname, '../../../temp_files/outside-order-window.log')
+const outsideOrderWindowLogPath = path.resolve(__dirname, '../../../outside-order-window.log')
 
 async function logOutsideOrderWindowAttempt({ req, pdv, orderWindow, items }) {
   const payload = {
@@ -488,77 +489,90 @@ router.post('/', requireAuth, async (req, res) => {
     const subtotalLimpieza = itemsValidados.filter(i => i.tipoId !== 1).reduce((s, i) => s + i.total, 0)
 
     // ── 10. Generar PDF ────────────────────────────────────────────────────
-    const filesPath = process.env.FILES_PATH || './temp_files'
+
+    // ── 10. Generar PDF ────────────────────────────────────────────────────
+    const filesPath = process.env.FILES_PATH || '.'
     if (!fs.existsSync(filesPath)) fs.mkdirSync(filesPath, { recursive: true })
 
     const nombreArchivo = `pedidoSuministro_${req.session.userlogin}_${fecha}`
     const pdfPath = path.join(filesPath, `${nombreArchivo}.pdf`)
 
-    // Armar HTML para el PDF
-    const html = `
-      <html>
-      <head>
-        <style>
-          body { font-family: Verdana, Arial, sans-serif; font-size: 14px; }
-          h2 { color: #2c2f88; }
-          table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-          th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-          th { background: #f3f4f6; }
-          .badge { display: inline-block; padding: 4px 12px; border-radius: 8px; background: #ffe082; color: #6b4f00; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <h2>Detalle del Pedido #${cabeceraPedidoId}</h2>
-        <p><b>Solicitante:</b> ${req.session.username}</p>
-        <p><b>Departamento:</b> ${departmentName}</p>
-        <p><b>Fecha:</b> ${fecha}</p>
-        <p><b>Estado:</b> <span class="badge">EN ESPERA</span></p>
-        <p><b>Total:</b> $${totalPedido.toFixed(2)}</p>
-        <h3>Productos Solicitados</h3>
-        <table>
-          <tr><th>Suministro</th><th>Cantidad</th><th>P. Unitario</th><th>Subtotal</th></tr>
-          ${itemsValidados.map(item => `
-            <tr>
-              <td>${item.suministroNombre}</td>
-              <td>${item.cantidad}</td>
-              <td>$${item.precioUnitario.toFixed(2)}</td>
-              <td>$${item.total.toFixed(2)}</td>
-            </tr>
-          `).join('')}
-        </table>
-      </body>
-      </html>
-    `;
+    const styles = StyleSheet.create({
+      page: { fontFamily: 'Helvetica', fontSize: 11, padding: 40 },
+      title: { fontSize: 16, color: '#2c2f88', marginBottom: 8, fontFamily: 'Helvetica-Bold' },
+      section: { marginBottom: 4 },
+      label: { fontFamily: 'Helvetica-Bold' },
+      badge: {
+        backgroundColor: '#ffe082', color: '#6b4f00', padding: '4 12', borderRadius: 4,
+        fontFamily: 'Helvetica-Bold', alignSelf: 'flex-start', marginBottom: 10
+      },
+      tableHeader: {
+        flexDirection: 'row', backgroundColor: '#f3f4f6', borderTopWidth: 1,
+        borderBottomWidth: 1, borderColor: '#ccc', paddingVertical: 4, marginTop: 12
+      },
+      tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#eee', paddingVertical: 4 },
+      col1: { width: '50%' },
+      col2: { width: '15%', textAlign: 'center' },
+      col3: { width: '17.5%', textAlign: 'right' },
+      col4: { width: '17.5%', textAlign: 'right' },
+      colHead: { fontFamily: 'Helvetica-Bold' },
+      totalRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
+      totalLabel: { fontFamily: 'Helvetica-Bold', marginRight: 8 },
+    })
 
-    await new Promise(async (resolve, reject) => {
-      try {
-        console.log('Iniciando Puppeteer en:', process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser');
-        const browser = await puppeteer.launch({
-          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
-          headless: 'new',
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-software-rasterizer',
-            '--no-zygote',
-            '--single-process'
-          ],
-          protocolTimeout: 60000
-        });
-        console.log('Browser iniciado, creando página...');
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        await page.pdf({ path: pdfPath, format: 'A4' });
-        await browser.close();
-        console.log('PDF creado exitosamente.');
-        resolve();
-      } catch (err) {
-        console.error('Error interno de Puppeteer:', err);
-        reject(err);
-      }
-    });
+    const PedidoDoc = () =>
+      React.createElement(Document, null,
+        React.createElement(Page, { size: 'A4', style: styles.page },
+          React.createElement(Text, { style: styles.title },
+            `Detalle del Pedido #${cabeceraPedidoId}`),
+
+          React.createElement(View, { style: styles.section },
+            React.createElement(Text, null,
+              React.createElement(Text, { style: styles.label }, 'Solicitante: '),
+              req.session.username)),
+
+          React.createElement(View, { style: styles.section },
+            React.createElement(Text, null,
+              React.createElement(Text, { style: styles.label }, 'Departamento: '),
+              departmentName)),
+
+          React.createElement(View, { style: styles.section },
+            React.createElement(Text, null,
+              React.createElement(Text, { style: styles.label }, 'Fecha: '),
+              fecha)),
+
+          React.createElement(View, { style: styles.badge },
+            React.createElement(Text, null, 'EN ESPERA')),
+
+          // Cabecera tabla
+          React.createElement(View, { style: styles.tableHeader },
+            React.createElement(Text, { style: [styles.col1, styles.colHead] }, 'Suministro'),
+            React.createElement(Text, { style: [styles.col2, styles.colHead] }, 'Cant.'),
+            React.createElement(Text, { style: [styles.col3, styles.colHead] }, 'P. Unitario'),
+            React.createElement(Text, { style: [styles.col4, styles.colHead] }, 'Subtotal'),
+          ),
+
+          // Filas
+          ...itemsValidados.map((item, i) =>
+            React.createElement(View, { key: i, style: styles.tableRow },
+              React.createElement(Text, { style: styles.col1 }, item.suministroNombre),
+              React.createElement(Text, { style: styles.col2 }, String(item.cantidad)),
+              React.createElement(Text, { style: styles.col3 }, `$${item.precioUnitario.toFixed(2)}`),
+              React.createElement(Text, { style: styles.col4 }, `$${item.total.toFixed(2)}`),
+            )
+          ),
+
+          // Total
+          React.createElement(View, { style: styles.totalRow },
+            React.createElement(Text, { style: styles.totalLabel }, 'Total:'),
+            React.createElement(Text, null, `$${totalPedido.toFixed(2)}`),
+          ),
+        )
+      )
+
+    const pdfBuffer = await renderToBuffer(React.createElement(PedidoDoc))
+    await fs.promises.writeFile(pdfPath, pdfBuffer)
+
 
     // ── 11. Enviar email ───────────────────────────────────────────────────
     let emailEnviado = false;
