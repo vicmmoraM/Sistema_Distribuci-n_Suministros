@@ -121,7 +121,7 @@ router.get('/estados-pedido', requireAuth, async (req, res) => {
  * Lista suministros filtrados por tipo.
  */
 router.get('/suministros', requireAuth, async (req, res) => {
-  const { tipo, pdv } = req.query;
+  const { tipo, pdv, q } = req.query;
 
   if (!tipo) {
     return res.status(400).json({ error: 'El parámetro "tipo" es requerido.' });
@@ -130,7 +130,13 @@ router.get('/suministros', requireAuth, async (req, res) => {
   try {
     const idPdv = pdv ? Number(pdv) : null
     const idDepartamento = Number(req.session?.departamento || 0)
-
+    let filtro = ''
+    let params = [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento]
+    if (q && q.trim().length > 0) {
+      filtro = ` AND (cv.suministro LIKE ? OR cv.nombre_proveedor LIKE ?)`
+      const likeQ = `%${q.trim()}%`
+      params.push(likeQ, likeQ)
+    }
     const [rows] = await pool.query(
       `SELECT
         cv.id_suministro,
@@ -157,8 +163,9 @@ router.get('/suministros', requireAuth, async (req, res) => {
           ))
         )
         AND (p.id_proveedor_principal IS NULL OR cv.id_proveedor = p.id_proveedor_principal)
+        ${filtro}
       ORDER BY cv.suministro`,
-      [idPdv, tipo, idPdv, idPdv, idPdv, idDepartamento]
+      params
     );
     return res.json(rows);
   } catch (err) {
