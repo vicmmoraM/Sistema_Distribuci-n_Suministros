@@ -12,6 +12,10 @@ const { Document, Page, Text, View, StyleSheet, renderToBuffer } = require('@rea
 const nodemailer = require('nodemailer')
 const PedidoRepository = require('../repositories/PedidoRepository')
 const { ensureCurrentDepartmentBudgets, ensureCurrentPdvBudgets } = require('../services/BudgetPeriodService')
+const {
+  buildOrderSubtotalsByBudgetGroup,
+  findExceededBudgetGroups,
+} = require('../services/PedidoBudgetService')
 
 const pedidoRepository = new PedidoRepository()
 const outsideOrderWindowLogPath = path.resolve(__dirname, '../../../outside-order-window.log')
@@ -156,6 +160,43 @@ router.post('/', requireAuth, async (req, res) => {
     const departmentBudget = montoAutorizado - montoEjecutado          // saldo disponible
     const esComercial = departmentName === 'comercial'
 
+    const groupBudgetSelect = hasMontoEjecutado
+      ? 'COALESCE(pdm.monto_ejecutado, pda.monto_ejecutado, 0) AS monto_ejecutado'
+      : '0 AS monto_ejecutado'
+
+    let departmentBudgetsByGroup = []
+
+    if (!esComercial) {
+      const [budgetRows] = await conn.query(
+        `SELECT gp.id_grupo_presupuesto,
+                gp.descripcion AS grupo,
+                COALESCE(pdm.monto_autorizado, pda.monto_autorizado, 0) AS monto_autorizado,
+                ${groupBudgetSelect}
+         FROM grupos_presupuesto gp
+         LEFT JOIN presupuesto_departamentos pdm
+           ON pdm.id_grupo_presupuesto = gp.id_grupo_presupuesto
+          AND pdm.id_departamento = ?
+          AND pdm.periodo_anio = ?
+          AND pdm.periodo_mes = ?
+         LEFT JOIN presupuesto_departamentos pda
+           ON pda.id_grupo_presupuesto = gp.id_grupo_presupuesto
+          AND pda.id_departamento = ?
+          AND pda.periodo_anio = ?
+          AND pda.periodo_mes = 0
+         WHERE gp.activo = 1
+         ORDER BY gp.id_grupo_presupuesto`,
+        [req.session.departamento, anioActual, mesActual, req.session.departamento, anioActual]
+      )
+
+      departmentBudgetsByGroup = budgetRows.map((row) => ({
+        id_grupo_presupuesto: Number(row.id_grupo_presupuesto),
+        grupo: row.grupo,
+        monto_autorizado: Number(row.monto_autorizado || 0),
+        monto_ejecutado: Number(row.monto_ejecutado || 0),
+        saldo_disponible: Math.max(0, Number(row.monto_autorizado || 0) - Number(row.monto_ejecutado || 0)),
+      }))
+    }
+
     if (esComercial && !pdvId) {
       await conn.rollback()
       conn.release()
@@ -276,11 +317,11 @@ router.post('/', requireAuth, async (req, res) => {
 
     for (const item of items) {
       // Validar estructura del ítem
-      if (!item.suministroId || !item.cantidad || item.cantidad < 1 || item.cantidad > 10) {
+      if (!item.suministroId || !item.cantidad || item.cantidad < 1) {
         await conn.rollback()
         conn.release()
         return res.status(400).json({
-          error: `Ítem inválido: cantidad debe estar entre 1 y 10.`
+          error: `Ítem inválido: cantidad debe ser mayor o igual a 1.`
         })
       }
 
@@ -357,9 +398,13 @@ router.post('/', requireAuth, async (req, res) => {
             0
           ) AS precio,
           t.id_tipo_suministro AS tipoId, 
-          t.descripcion AS tipoNombre
+          t.descripcion AS tipoNombre,
+          COALESCE(gts.id_grupo_presupuesto, 0) AS idGrupoPresupuesto,
+          COALESCE(gp.descripcion, 'Sin grupo') AS grupoPresupuestoNombre
          FROM suministros s
          INNER JOIN tipo_suministros t ON s.id_tipo_suministro = t.id_tipo_suministro
+         LEFT JOIN grupo_tipos_suministro gts ON gts.id_tipo_suministro = t.id_tipo_suministro
+         LEFT JOIN grupos_presupuesto gp ON gp.id_grupo_presupuesto = gts.id_grupo_presupuesto
          WHERE s.id_suministro = ? AND s.id_estado_suministro = 1`,
         [proveedorPreferido, proveedorPreferido, proveedorPreferido, proveedorPreferido, item.suministroId]
       )
@@ -381,6 +426,8 @@ router.post('/', requireAuth, async (req, res) => {
         suministroNombre: suministro.descripcion,
         tipoId: suministro.tipoId,
         tipoNombre: suministro.tipoNombre,
+        idGrupoPresupuesto: Number(suministro.idGrupoPresupuesto || 0),
+        grupoPresupuestoNombre: suministro.grupoPresupuestoNombre,
         cantidad: Number(item.cantidad),
         precioUnitario: Number(suministro.precio),
         total: Number(item.cantidad) * Number(suministro.precio),
@@ -407,18 +454,30 @@ router.post('/', requireAuth, async (req, res) => {
         })
       }
     } else {
-      if (departmentBudget <= 0 && montoAutorizado > 0) {
+      const requestedSubtotalsByGroup = buildOrderSubtotalsByBudgetGroup(itemsValidados)
+      const exceededGroups = findExceededBudgetGroups({
+        subtotalsByGroup: requestedSubtotalsByGroup,
+        availableBudgetByGroup: departmentBudgetsByGroup,
+      })
+
+      if (exceededGroups.length > 0) {
         await conn.rollback()
         conn.release()
+
+        const exceededCategoryNames = exceededGroups.map((group) => group.grupo).join(' / ')
+        const humanError = exceededGroups.length === 1
+          ? `Te excediste en ${exceededCategoryNames}.`
+          : `Te excediste en las categorías: ${exceededCategoryNames}.`
+
+        const exceededSummary = exceededGroups
+          .map((group) => `${group.grupo}: solicitado $${group.subtotal_solicitado.toFixed(2)}, disponible $${group.saldo_disponible.toFixed(2)}, excedente $${group.excedente.toFixed(2)}`)
+          .join(' | ')
+
         return res.status(400).json({
-          error: `El departamento ha agotado su presupuesto ($${montoAutorizado.toFixed(2)}). Espera el reinicio del presupuesto.`
-        })
-      }
-      if (totalPedido > departmentBudget) {
-        await conn.rollback()
-        conn.release()
-        return res.status(400).json({
-          error: `El total $${totalPedido.toFixed(2)} supera el presupuesto disponible $${departmentBudget.toFixed(2)}.`
+          error: humanError,
+          shortError: humanError,
+          detail: exceededSummary,
+          exceededBudgetGroups: exceededGroups,
         })
       }
     }
@@ -474,11 +533,45 @@ router.post('/', requireAuth, async (req, res) => {
         'UPDATE pdvs SET cupo_disponible = GREATEST(0, COALESCE(cupo_disponible, ?) - ?) WHERE id_pdv = ?',
         [Number(pdv.cupoGrupo), totalPedido, pdvId]
       )
-    } else if (!esComercial && hasMontoEjecutado && presupuestoId) {
-      await conn.query(
-        'UPDATE presupuesto_departamentos SET monto_ejecutado = monto_ejecutado + ? WHERE id_presupuesto_departamento = ?',
-        [totalPedido, presupuestoId]
-      )
+    } else if (!esComercial && hasMontoEjecutado) {
+      const requestedSubtotalsByGroup = buildOrderSubtotalsByBudgetGroup(itemsValidados)
+
+      for (const groupSubtotal of requestedSubtotalsByGroup) {
+        if (groupSubtotal.subtotal_solicitado <= 0) continue
+
+        const [updateResult] = await conn.query(
+          `UPDATE presupuesto_departamentos
+           SET monto_ejecutado = monto_ejecutado + ?
+           WHERE id_departamento = ?
+             AND id_grupo_presupuesto = ?
+             AND periodo_anio = ?
+             AND periodo_mes = ?`,
+          [
+            Number(groupSubtotal.subtotal_solicitado),
+            req.session.departamento,
+            Number(groupSubtotal.id_grupo_presupuesto),
+            anioActual,
+            mesActual,
+          ]
+        )
+
+        if (Number(updateResult.affectedRows || 0) === 0) {
+          await conn.query(
+            `UPDATE presupuesto_departamentos
+             SET monto_ejecutado = monto_ejecutado + ?
+             WHERE id_departamento = ?
+               AND id_grupo_presupuesto = ?
+               AND periodo_anio = ?
+               AND periodo_mes = 0`,
+            [
+              Number(groupSubtotal.subtotal_solicitado),
+              req.session.departamento,
+              Number(groupSubtotal.id_grupo_presupuesto),
+              anioActual,
+            ]
+          )
+        }
+      }
     }
 
     await conn.commit()

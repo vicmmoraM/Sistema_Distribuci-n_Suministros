@@ -288,7 +288,7 @@ export default function Home() {
     .filter(([groupId, total]) => Number(total) > Number(departmentBudgetMap[Number(groupId)]?.saldo || 0))
     .map(([groupId]) => departmentBudgetMap[Number(groupId)]?.descripcion || 'categoria seleccionada')
   const cupoExcedido = esComercial ? totalPedido > limiteDisponible : departmentExceededGroups.length > 0
-  const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido
+  const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado)
 
   const ejecutarBusquedaSuministros = useCallback(async (rawValue) => {
     if (!tipoSeleccionado) return
@@ -406,12 +406,6 @@ export default function Home() {
     if (carrito.length === 0) return
     if (esComercial && !pdvSeleccionado) return
 
-    if (cupoExcedido) {
-      setError(esComercial
-        ? 'El total supera el cupo asignado al PDV.'
-        : `El total supera el presupuesto asignado para ${departmentExceededGroups.join(', ')}.`)
-      return
-    }
     setEnviando(true)
     setError('')
     try {
@@ -423,7 +417,8 @@ export default function Home() {
       await refreshUser()
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al procesar el pedido.')
+      const responseData = err?.response?.data
+      setError(responseData?.shortError || responseData?.error || 'Error al procesar el pedido.')
     } finally {
       setEnviando(false)
     }
