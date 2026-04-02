@@ -288,7 +288,7 @@ export default function Home() {
     .filter(([groupId, total]) => Number(total) > Number(departmentBudgetMap[Number(groupId)]?.saldo || 0))
     .map(([groupId]) => departmentBudgetMap[Number(groupId)]?.descripcion || 'categoria seleccionada')
   const cupoExcedido = esComercial ? totalPedido > limiteDisponible : departmentExceededGroups.length > 0
-  const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado)
+  const debeDeshabilitarBoton = enviando || carrito.length === 0 || (esComercial && !pdvSeleccionado)
 
   const ejecutarBusquedaSuministros = useCallback(async (rawValue) => {
     if (!tipoSeleccionado) return

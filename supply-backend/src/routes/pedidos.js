@@ -52,6 +52,31 @@ async function logOutsideOrderWindowAttempt({ req, pdv, orderWindow, items }) {
   console.warn('Pedido fuera de ventana detectado:', payload)
 }
 
+function consolidateOrderItemsBySupply(items = []) {
+  const consolidated = new Map()
+
+  for (const rawItem of items) {
+    const suministroId = Number(rawItem?.suministroId)
+    const cantidad = Number(rawItem?.cantidad)
+
+    if (!Number.isInteger(suministroId) || suministroId <= 0 || !Number.isInteger(cantidad) || cantidad <= 0) {
+      continue
+    }
+
+    const current = consolidated.get(suministroId)
+    if (current) {
+      current.cantidad += cantidad
+    } else {
+      consolidated.set(suministroId, {
+        suministroId,
+        cantidad,
+      })
+    }
+  }
+
+  return Array.from(consolidated.values())
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.MAIL_HOST,
   port: Number(process.env.MAIL_PORT),
@@ -70,6 +95,22 @@ router.post('/', requireAuth, async (req, res) => {
   // ── 1. Validación básica de estructura ─────────────────────────────────────
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Los ítems son requeridos.' })
+  }
+
+  const hasInvalidRawItem = items.some(
+    (item) => !Number.isInteger(Number(item?.suministroId))
+      || Number(item?.suministroId) <= 0
+      || !Number.isInteger(Number(item?.cantidad))
+      || Number(item?.cantidad) <= 0
+  )
+
+  if (hasInvalidRawItem) {
+    return res.status(400).json({ error: 'Los ítems son inválidos. Verifica suministro y cantidad.' })
+  }
+
+  const consolidatedItems = consolidateOrderItemsBySupply(items)
+  if (consolidatedItems.length === 0) {
+    return res.status(400).json({ error: 'Los ítems son inválidos. Verifica suministro y cantidad.' })
   }
 
   const fecha = new Date().toISOString().split('T')[0]
@@ -315,7 +356,7 @@ router.post('/', requireAuth, async (req, res) => {
     // No confiamos en precios ni totales del frontend
     const itemsValidados = []
 
-    for (const item of items) {
+    for (const item of consolidatedItems) {
       // Validar estructura del ítem
       if (!item.suministroId || !item.cantidad || item.cantidad < 1) {
         await conn.rollback()
@@ -892,19 +933,20 @@ router.put('/:id/items', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Debes enviar al menos un producto.' })
     }
 
-    const parsedItems = items.map((item) => ({
-      suministroId: Number(item?.suministroId),
-      cantidad: Number(item?.cantidad),
-    }))
-
-    const hasInvalidItem = parsedItems.some(
-      (item) => !Number.isInteger(item.suministroId)
-        || item.suministroId <= 0
-        || !Number.isInteger(item.cantidad)
-        || item.cantidad <= 0
+    const hasInvalidRawItem = items.some(
+      (item) => !Number.isInteger(Number(item?.suministroId))
+        || Number(item?.suministroId) <= 0
+        || !Number.isInteger(Number(item?.cantidad))
+        || Number(item?.cantidad) <= 0
     )
 
-    if (hasInvalidItem) {
+    if (hasInvalidRawItem) {
+      return res.status(400).json({ error: 'Items inválidos. Verifica producto y cantidad.' })
+    }
+
+    const parsedItems = consolidateOrderItemsBySupply(items)
+
+    if (parsedItems.length === 0) {
       return res.status(400).json({ error: 'Items inválidos. Verifica producto y cantidad.' })
     }
 
@@ -1076,19 +1118,22 @@ router.post('/:id/aprobar', requireAuth, async (req, res) => {
           currentDetailRows.map((row) => [Number(row.id_suministro), row])
         )
 
-        const parsedItems = items.map((item) => ({
-          suministroId: Number(item?.suministroId),
-          cantidad: Number(item?.cantidad),
-        }))
-
-        const hasInvalidItem = parsedItems.some(
-          (item) => !Number.isInteger(item.suministroId)
-            || item.suministroId <= 0
-            || !Number.isInteger(item.cantidad)
-            || item.cantidad <= 0
+        const hasInvalidRawItem = items.some(
+          (item) => !Number.isInteger(Number(item?.suministroId))
+            || Number(item?.suministroId) <= 0
+            || !Number.isInteger(Number(item?.cantidad))
+            || Number(item?.cantidad) <= 0
         )
 
-        if (hasInvalidItem) {
+        if (hasInvalidRawItem) {
+          await conn.rollback()
+          conn.release()
+          return res.status(400).json({ error: 'Items editados inválidos. Verifica cantidad y suministro.' })
+        }
+
+        const parsedItems = consolidateOrderItemsBySupply(items)
+
+        if (parsedItems.length === 0) {
           await conn.rollback()
           conn.release()
           return res.status(400).json({ error: 'Items editados inválidos. Verifica cantidad y suministro.' })
