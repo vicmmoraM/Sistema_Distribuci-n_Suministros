@@ -894,6 +894,9 @@ export default function Layout({ showLogout = true }) {
             </>
           )}
         </nav>
+        <div className="sidebar-version" title="Versión del sistema">
+          {isCollapsed ? 'v1.0.1' : 'Versión v1.0.1'}
+        </div>
       </aside>
     </>
   )

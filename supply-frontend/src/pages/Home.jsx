@@ -56,8 +56,11 @@ export default function Home() {
   const [cantidad, setCantidad] = useState(1)
   const [suministrosBusqueda, setSuministrosBusqueda] = useState([])
   const [buscando, setBuscando] = useState(false)
+  const [highlightedSuministroIndex, setHighlightedSuministroIndex] = useState(-1)
   const debounceRef = useRef()
   const searchAbortRef = useRef(null)
+  const suministroInputRef = useRef(null)
+  const tipoSelectRef = useRef(null)
 
   // Carrito
   const [carrito, setCarrito] = useState([])
@@ -256,6 +259,7 @@ export default function Home() {
   // Live search: sugerencias
   const suministroSearchTerm = suministroSearch.trim().toLowerCase()
   const sugerencias = suministroSearchTerm.length > 0 ? suministrosBusqueda : suministros
+  const visibleSugerencias = sugerencias.slice(0, 12)
 
   // Totales por grupo de presupuesto
   const subtotalOficina = carrito.filter(i => i.grupoPresupuestoId === 1).reduce((s, i) => s + i.total, 0)
@@ -286,6 +290,86 @@ export default function Home() {
   const cupoExcedido = esComercial ? totalPedido > limiteDisponible : departmentExceededGroups.length > 0
   const debeDeshabilitarBoton = carrito.length === 0 || (esComercial && !pdvSeleccionado) || cupoExcedido
 
+  const ejecutarBusquedaSuministros = useCallback(async (rawValue) => {
+    if (!tipoSeleccionado) return
+
+    const value = rawValue.trim()
+    if (searchAbortRef.current) searchAbortRef.current.abort()
+
+    if (value.length === 0) {
+      setSuministrosBusqueda([])
+      setBuscando(false)
+      setHighlightedSuministroIndex(-1)
+      return
+    }
+
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+    setBuscando(true)
+
+    try {
+      const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : ''
+      const resp = await api.get(
+        `/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}&q=${encodeURIComponent(value)}`,
+        { signal: controller.signal }
+      )
+      setSuministrosBusqueda(resp.data || [])
+      setHighlightedSuministroIndex(-1)
+    } catch (err) {
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return
+      setSuministrosBusqueda([])
+      setHighlightedSuministroIndex(-1)
+    } finally {
+      if (searchAbortRef.current === controller) searchAbortRef.current = null
+      setBuscando(false)
+    }
+  }, [tipoSeleccionado, pdvSeleccionado?.id_pdv])
+
+  useEffect(() => {
+    const handleGlobalSearchShortcut = (e) => {
+      if (vistaActual !== 'nuevo-pedido') return
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+
+      const activeElement = document.activeElement
+      const isEditingInField = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.tagName === 'SELECT' ||
+        activeElement.isContentEditable
+      )
+      if (isEditingInField) return
+
+      const key = e.key.toLowerCase()
+      if (key === 'a') {
+        e.preventDefault()
+        const tipoSelect = tipoSelectRef.current
+        if (!tipoSelect) return
+
+        tipoSelect.focus()
+        if (typeof tipoSelect.showPicker === 'function') {
+          tipoSelect.showPicker()
+        }
+        return
+      }
+
+      if (key !== 's' && key !== '/') return
+
+      if (!tipoSeleccionado) return
+
+      e.preventDefault()
+      suministroInputRef.current?.focus()
+      suministroInputRef.current?.select()
+      setShowSuministroDropdown(true)
+      setHighlightedSuministroIndex(-1)
+    }
+
+    window.addEventListener('keydown', handleGlobalSearchShortcut)
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalSearchShortcut)
+    }
+  }, [vistaActual, tipoSeleccionado])
+
   const handleAgregar = () => {
     if (!suministroId || !tipoSeleccionado || !cantidad) return
     const sum = suministros.find(s => s.id_suministro === Number(suministroId))
@@ -313,6 +397,7 @@ export default function Home() {
     setSuministroId(String(suministro.id_suministro))
     setSuministroSearch(getSuministroLabel(suministro))
     setShowSuministroDropdown(false)
+    setHighlightedSuministroIndex(-1)
   }
 
   const handleEliminar = (id) => setCarrito(prev => prev.filter(i => i.id !== id))
@@ -515,6 +600,7 @@ export default function Home() {
               <h2 className="section-header">Agregar Suministro</h2>
               <div className="add-item-grid">
                 <select value={tipoSeleccionado} onChange={e => setTipo(e.target.value)}
+                  ref={tipoSelectRef}
                   className="form-select">
                   <option value="">Tipo de suministro...</option>
                   {tiposSuministroUnicos.map(t => (
@@ -524,6 +610,7 @@ export default function Home() {
 
                 <div className="supply-picker-group">
                   <input
+                    ref={suministroInputRef}
                     type="text"
                     value={suministroSearch}
                     onChange={e => {
@@ -531,33 +618,79 @@ export default function Home() {
                       setSuministroSearch(value);
                       setSuministroId('');
                       setShowSuministroDropdown(true);
+                      setHighlightedSuministroIndex(-1);
                       if (debounceRef.current) clearTimeout(debounceRef.current);
                       if (searchAbortRef.current) searchAbortRef.current.abort();
-                      setSuministrosBusqueda([]); // Limpiar sugerencias inmediatamente
-                      setBuscando(true); // Mostrar 'Buscando...'
-                      if (!tipoSeleccionado) return;
-                      debounceRef.current = setTimeout(async () => {
-                        if (searchAbortRef.current) searchAbortRef.current.abort();
-                        if (value.trim().length === 0) {
-                          setSuministrosBusqueda([]);
-                          setBuscando(false);
-                          return;
-                        }
-                        const controller = new AbortController();
-                        searchAbortRef.current = controller;
-                        try {
-                          const pdvQuery = pdvSeleccionado?.id_pdv ? `&pdv=${pdvSeleccionado.id_pdv}` : '';
-                          const resp = await api.get(`/catalogos/suministros?tipo=${tipoSeleccionado}${pdvQuery}&q=${encodeURIComponent(value)}`, { signal: controller.signal });
-                          setSuministrosBusqueda(resp.data || []);
-                        } catch (err) {
-                          if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
-                          setSuministrosBusqueda([]);
-                        }
+                      setSuministrosBusqueda([]);
+
+                      if (!tipoSeleccionado || value.trim().length === 0) {
                         setBuscando(false);
+                        return;
+                      }
+
+                      setBuscando(true);
+                      debounceRef.current = setTimeout(() => {
+                        ejecutarBusquedaSuministros(value);
                       }, 350);
                     }}
-                    onFocus={() => setShowSuministroDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowSuministroDropdown(false), 120)}
+                    onKeyDown={e => {
+                      if (e.key === 'ArrowDown') {
+                        if (visibleSugerencias.length === 0) return;
+                        e.preventDefault();
+                        setShowSuministroDropdown(true);
+                        setHighlightedSuministroIndex(prev => (
+                          prev < visibleSugerencias.length - 1 ? prev + 1 : 0
+                        ));
+                        return;
+                      }
+
+                      if (e.key === 'ArrowUp') {
+                        if (visibleSugerencias.length === 0) return;
+                        e.preventDefault();
+                        setShowSuministroDropdown(true);
+                        setHighlightedSuministroIndex(prev => (
+                          prev > 0 ? prev - 1 : visibleSugerencias.length - 1
+                        ));
+                        return;
+                      }
+
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+
+                        if (
+                          showSuministroDropdown &&
+                          highlightedSuministroIndex >= 0 &&
+                          visibleSugerencias[highlightedSuministroIndex]
+                        ) {
+                          handleSelectSuministro(visibleSugerencias[highlightedSuministroIndex]);
+                          return;
+                        }
+
+                        if (debounceRef.current) clearTimeout(debounceRef.current);
+                        setShowSuministroDropdown(true);
+                        ejecutarBusquedaSuministros(suministroSearch);
+                      }
+
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        if (debounceRef.current) clearTimeout(debounceRef.current);
+                        if (searchAbortRef.current) searchAbortRef.current.abort();
+                        setSuministroSearch('');
+                        setSuministroId('');
+                        setSuministrosBusqueda([]);
+                        setShowSuministroDropdown(false);
+                        setBuscando(false);
+                        setHighlightedSuministroIndex(-1);
+                      }
+                    }}
+                    onFocus={() => {
+                      setShowSuministroDropdown(true)
+                      setHighlightedSuministroIndex(-1)
+                    }}
+                    onBlur={() => setTimeout(() => {
+                      setShowSuministroDropdown(false)
+                      setHighlightedSuministroIndex(-1)
+                    }, 120)}
                     disabled={!tipoSeleccionado}
                     placeholder={tipoSeleccionado ? 'Buscar suministro por nombre o proveedor...' : 'Selecciona primero el tipo'}
                     className="form-input"
@@ -569,11 +702,14 @@ export default function Home() {
                           {buscando ? 'Buscando...' : 'Sin coincidencias'}
                         </div>
                       ) : (
-                        sugerencias.slice(0, 12).map((s) => (
+                        visibleSugerencias.map((s, idx) => (
                           <button
                             key={s.id_suministro}
                             type="button"
-                            className="supply-dropdown-item"
+                            className={`supply-dropdown-item ${idx === highlightedSuministroIndex ? 'supply-dropdown-item--active' : ''}`}
+                            role="option"
+                            aria-selected={idx === highlightedSuministroIndex}
+                            onMouseEnter={() => setHighlightedSuministroIndex(idx)}
                             onMouseDown={() => handleSelectSuministro(s)}
                           >
                             {getSuministroLabel(s)}
@@ -585,7 +721,7 @@ export default function Home() {
                 </div>
 
                 <input
-                  type="number" min={1} max={10} value={cantidad}
+                  type="number" min={1} value={cantidad}
                   onChange={e => setCantidad(e.target.value)}
                   placeholder="Cantidad"
                   className="form-input"
@@ -637,7 +773,6 @@ export default function Home() {
                               <input
                                 type="number"
                                 min={1}
-                                max={100}
                                 value={item.cantidad === 0 ? '' : item.cantidad}
                                 style={{ width: '60px' }}
                                 onChange={e => {

@@ -232,6 +232,10 @@
   background: #eef2ff;
 }
 
+.home-main .supply-dropdown-item--active {
+  background: #eef2ff;
+}
+
 .home-main .supply-dropdown-item--empty {
   color: #6b7280;
   cursor: default;

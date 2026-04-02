@@ -1,5 +1,3 @@
-// Endpoints de dolo lectura para poblar dropdowns y catálogos
-
 const express = require('express');
 const router  = express.Router();
 const { pool } = require('../config/db');

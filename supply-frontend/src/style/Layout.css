@@ -140,6 +140,23 @@
   padding: 1.5rem 0.25rem;
 }
 
+.sidebar-version {
+  margin: 0.85rem 0.75rem 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #e0e2e6;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-align: center;
+  letter-spacing: 0.03em;
+}
+
+.sidebar-collapsed .sidebar-version {
+  margin: 0.85rem 0.25rem 0.5rem;
+  font-size: 0.62rem;
+}
+
 @media (max-width: 1024px) {
   .main-navbar {
     padding: 0.65rem 1.25rem;
