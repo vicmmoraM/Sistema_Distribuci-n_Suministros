@@ -3,6 +3,19 @@ import api from '../api/axios'
 import { normalizeUser } from '../features/auth/utils/normalizeUser'
 
 const AuthContext = createContext(null)
+const PEDIDO_DRAFT_STORAGE_PREFIX = 'pedido-draft:'
+
+const clearPedidoDraftStorage = () => {
+  if (typeof window === 'undefined') return
+
+  try {
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith(PEDIDO_DRAFT_STORAGE_PREFIX))
+      .forEach((key) => window.localStorage.removeItem(key))
+  } catch {
+    // Ignorar errores de almacenamiento al cerrar sesion.
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
@@ -34,8 +47,12 @@ export function AuthProvider({ children }) {
   }
 
   const logout = async () => {
-    await api.post('/auth/logout')
-    setUser(null)
+    try {
+      await api.post('/auth/logout')
+    } finally {
+      clearPedidoDraftStorage()
+      setUser(null)
+    }
   }
 
   return (

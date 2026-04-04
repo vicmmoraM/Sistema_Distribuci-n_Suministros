@@ -45,12 +45,45 @@ const EyeOffIcon = () => (
   </svg>
 )
 
+const FARMCORP_DOMAIN = '@farmcorp.com.ec'
+
+const normalizeLoginIdentifier = (rawValue) => {
+  const value = String(rawValue || '').trim()
+  if (!value) {
+    return { username: '', error: null }
+  }
+
+  const atIndex = value.indexOf('@')
+  if (atIndex === -1) {
+    return { username: value, error: null }
+  }
+
+  const lowerValue = value.toLowerCase()
+  if (!lowerValue.endsWith(FARMCORP_DOMAIN)) {
+    return {
+      username: '',
+      error: `Solo se permiten correos del dominio ${FARMCORP_DOMAIN}`,
+    }
+  }
+
+  const localPart = value.slice(0, atIndex).trim()
+  if (!localPart) {
+    return {
+      username: '',
+      error: 'El correo ingresado no es valido.',
+    }
+  }
+
+  return { username: localPart, error: null }
+}
+
 export default function Login() {
   const { login, user } = useAuth()
   const navigate = useNavigate()
 
   const [departamentos, setDepartamentos] = useState([])
   const [form, setForm] = useState({ username: '', password: '', departmentId: '' })
+  const [departmentName, setDepartmentName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [deptAutoFilled, setDeptAutoFilled] = useState(false)
@@ -67,27 +100,45 @@ export default function Login() {
       .catch(() => setError('No se pudo cargar la lista de departamentos.'))
   }, [])
 
-  // Obtener el departamento del usuario cuando cambia el username
-  const handleUsernameBlur = async () => {
-    if (!form.username.trim()) {
+  const resolveDepartmentForUsername = async (username) => {
+    const { username: normalizedUsername, error: normalizeError } = normalizeLoginIdentifier(username)
+    if (normalizeError) {
+      setDeptAutoFilled(false)
+      setGetUserError(normalizeError)
+      setDepartmentName('')
+      setForm(f => ({ ...f, departmentId: '' }))
+      return null
+    }
+
+    if (!normalizedUsername) {
       setDeptAutoFilled(false)
       setGetUserError('')
-      return
+      setDepartmentName('')
+      setForm(f => ({ ...f, departmentId: '' }))
+      return null
     }
 
     try {
       setGetUserError('')
-      const res = await api.get(`/auth/departamento/${form.username}`)
-      const { id_departamento, departmentName } = res.data
-      
-      // Auto-llenar el departamento
+      const res = await api.get(`/auth/departamento/${normalizedUsername}`)
+      const { id_departamento, departmentName: resolvedDepartmentName } = res.data
+
       setForm(f => ({ ...f, departmentId: id_departamento }))
+      setDepartmentName(resolvedDepartmentName || '')
       setDeptAutoFilled(true)
+      return String(id_departamento)
     } catch (err) {
       setDeptAutoFilled(false)
       setGetUserError(err.response?.data?.error || 'Usuario no encontrado.')
+      setDepartmentName('')
       setForm(f => ({ ...f, departmentId: '' }))
+      return null
     }
+  }
+
+  // Obtener el departamento del usuario cuando cambia el username
+  const handleUsernameBlur = async () => {
+    await resolveDepartmentForUsername(form.username)
   }
 
   const handleChange = e => {
@@ -96,6 +147,10 @@ export default function Login() {
     if (name === 'username') {
       setDeptAutoFilled(false)
       setGetUserError('')
+      setDepartmentName('')
+      setForm((prev) => ({ ...prev, username: value, departmentId: '' }))
+      setError('')
+      return
     }
     if (name === 'password' && !value) {
       setShowPassword(false)
@@ -106,10 +161,33 @@ export default function Login() {
 
   const handleSubmit = async e => {
     e.preventDefault()
-    if (!form.departmentId) { setError('Debes ingresar un usuario válido.'); return }
+
+    const { username: loginUsername, error: normalizeError } = normalizeLoginIdentifier(form.username)
+    if (normalizeError) {
+      setError(normalizeError)
+      return
+    }
+
+    if (!loginUsername) {
+      setError('Ingresa tu usuario o correo corporativo.')
+      return
+    }
+
+    let departmentId = form.departmentId
+    if (!departmentId) {
+      const resolvedDepartmentId = await resolveDepartmentForUsername(loginUsername)
+      if (!resolvedDepartmentId) {
+        setError('No se pudo detectar el departamento para este usuario.')
+        return
+      }
+      departmentId = resolvedDepartmentId
+    }
+
+    if (!departmentId) { setError('No se pudo detectar el departamento para este usuario.'); return }
+
     setLoading(true)
     try {
-      await login(form.username, form.password, form.departmentId)
+      await login(loginUsername, form.password, departmentId)
       navigate('/home')
     } catch (err) {
       setError(err.response?.data?.error || 'Error de autenticación.')
@@ -164,7 +242,7 @@ export default function Login() {
                   value={form.username}
                   onChange={handleChange}
                   onBlur={handleUsernameBlur}
-                  placeholder="nombre.apellido"
+                  placeholder="usuario o usuario@farmcorp.com.ec"
                   required
                   autoComplete="username"
                   className="form-input"
@@ -230,19 +308,20 @@ export default function Login() {
                   id="departmentId"
                   name="departmentId"
                   value={form.departmentId}
-                  onChange={handleChange}
-                  disabled={deptAutoFilled}
+                  disabled
                   required
                   className="form-select"
                   style={{
-                    cursor: deptAutoFilled ? 'not-allowed' : 'pointer',
-                    opacity: deptAutoFilled ? 0.8 : 1,
-                    backgroundColor: deptAutoFilled ? '#f3f4f6' : 'white',
+                    cursor: 'not-allowed',
+                    opacity: 0.9,
+                    backgroundColor: '#f3f4f6',
                   }}>
-                  <option value="">Seleccionar departamento...</option>
-                    {(Array.isArray(departamentos) ? departamentos : []).map(d => (
-                      <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
-                    ))}
+                  <option value="">
+                    {departmentName || 'Se completa automaticamente'}
+                  </option>
+                  {(Array.isArray(departamentos) ? departamentos : []).map(d => (
+                    <option key={d.id_departamento} value={d.id_departamento}>{d.descripcion}</option>
+                  ))}
                 </select>
               </div>
               {deptAutoFilled && (
@@ -272,7 +351,7 @@ export default function Login() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                   </svg>
-                  <span>Escribe tu usuario arriba para auto-rellenar</span>
+                  <span>Escribe tu usuario arriba para autocompletar el departamento</span>
                 </div>
               )}
               {getUserError && (

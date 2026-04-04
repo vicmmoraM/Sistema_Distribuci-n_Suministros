@@ -18,6 +18,17 @@ const ESTADO_BADGE = {
   'En espera': 'badge--pendiente',
 }
 
+const PEDIDO_DRAFT_STORAGE_PREFIX = 'pedido-draft:'
+
+const buildPedidoDraftKey = (userLogin) => {
+  if (!userLogin) return null
+  return `${PEDIDO_DRAFT_STORAGE_PREFIX}${String(userLogin).toLowerCase()}`
+}
+
+const isValidCarritoDraft = (value) => (
+  Array.isArray(value) && value.every((item) => item && typeof item === 'object')
+)
+
 export default function Home() {
   const { user, loading, refreshUser } = useAuth()
   const { isCollapsed } = useSidebar()
@@ -61,6 +72,8 @@ export default function Home() {
   const searchAbortRef = useRef(null)
   const suministroInputRef = useRef(null)
   const tipoSelectRef = useRef(null)
+  const draftHydratedRef = useRef(false)
+  const pedidoDraftStorageKey = buildPedidoDraftKey(user?.login)
 
   // Carrito
   const [carrito, setCarrito] = useState([])
@@ -68,6 +81,51 @@ export default function Home() {
   // UI
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (loading) return
+    if (!pedidoDraftStorageKey) {
+      draftHydratedRef.current = false
+      return
+    }
+
+    draftHydratedRef.current = false
+
+    try {
+      const storedDraft = window.localStorage.getItem(pedidoDraftStorageKey)
+      if (!storedDraft) {
+        setCarrito([])
+      } else {
+        const parsedDraft = JSON.parse(storedDraft)
+        if (isValidCarritoDraft(parsedDraft)) {
+          setCarrito(parsedDraft)
+        } else {
+          window.localStorage.removeItem(pedidoDraftStorageKey)
+          setCarrito([])
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(pedidoDraftStorageKey)
+      setCarrito([])
+    } finally {
+      draftHydratedRef.current = true
+    }
+  }, [loading, pedidoDraftStorageKey])
+
+  useEffect(() => {
+    if (!pedidoDraftStorageKey || !draftHydratedRef.current) return
+
+    try {
+      if (carrito.length === 0) {
+        window.localStorage.removeItem(pedidoDraftStorageKey)
+        return
+      }
+
+      window.localStorage.setItem(pedidoDraftStorageKey, JSON.stringify(carrito))
+    } catch {
+      // Ignorar errores de almacenamiento para no bloquear el flujo de pedidos.
+    }
+  }, [carrito, pedidoDraftStorageKey])
 
 
   const tiposSuministroUnicos = Array.from(
@@ -414,6 +472,10 @@ export default function Home() {
         payload.pdvId = pdvSeleccionado.id_pdv
       }
       const res = await api.post('/pedidos', payload)
+      if (pedidoDraftStorageKey) {
+        window.localStorage.removeItem(pedidoDraftStorageKey)
+      }
+      setCarrito([])
       await refreshUser()
       navigate('/notificacion', { state: { mensaje: res.data.mensaje, emailEnviado: res.data.emailEnviado } })
     } catch (err) {
